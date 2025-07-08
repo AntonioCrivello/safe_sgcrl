@@ -124,6 +124,7 @@ class ContrastiveLearner(acme.Learner):
         obs = jnp.concatenate([s, new_g], axis=1)
         transitions = transitions._replace(observation=obs)
       I = jnp.eye(batch_size)  # pylint: disable=invalid-name
+
       
       logits, _, _ = networks.q_network.apply(q_params, transitions.observation, transitions.action)
 

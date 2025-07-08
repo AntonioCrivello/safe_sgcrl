@@ -9,6 +9,7 @@ import gym
 import metaworld
 import numpy as np
 import point_env
+import new_point_env
 
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 
@@ -32,7 +33,7 @@ def euler2quat(euler):
   return quat
 
 
-def load(env_name, fixed_start_end=None):
+def load(env_name, fixed_start_end=None, extra_dim=8):
   """Loads the train and eval environments, as well as the obs_dim."""
   # pylint: disable=invalid-name
   kwargs = {}
@@ -56,6 +57,15 @@ def load(env_name, fixed_start_end=None):
       max_episode_steps = 100
     else:
       max_episode_steps = 50
+  elif env_name.startswith('random_point_'):
+    CLASS = new_point_env.PointEnvExtras
+    kwargs['walls'] = env_name.split('_')[-1]
+    kwargs['fixed_start_end'] = fixed_start_end
+    kwargs['extra_dim'] = extra_dim
+    if '11x11' in env_name:
+      max_episode_steps = 100
+    else:
+      max_episode_steps = 50
   else:
     raise NotImplementedError('Unsupported environment: %s' % env_name)
 
@@ -63,6 +73,7 @@ def load(env_name, fixed_start_end=None):
   # different kwargs, which pytype doesn't reason about.
   gym_env = CLASS(**kwargs)  # pytype: disable=wrong-keyword-args
   obs_dim = gym_env.observation_space.shape[0] // 2
+  print('Observation dim:', gym_env.observation_space.shape[0])
   return gym_env, obs_dim, max_episode_steps
 
 

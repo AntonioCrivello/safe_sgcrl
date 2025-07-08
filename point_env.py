@@ -152,7 +152,7 @@ class PointEnv(gym.Env):
   def _get_obs(self):
     return np.concatenate([self.state, self.goal]).astype(np.float32)
 
-  def reset(self):
+  def reset(self, random = True):
     self._timestep = 0
     
     if self._fixed_start_end is not None:
@@ -162,6 +162,16 @@ class PointEnv(gym.Env):
     else:
         self.goal = self._sample_empty_state()
         self.state = self._sample_empty_state()
+    if random:
+        # print("initial state" , self.state)
+        max_shift = 1.0  # Max amount to move in any direction
+        for _ in range(100):  # Try multiple random moves in case some are blocked
+            shift = np.random.uniform(low=-max_shift, high=max_shift, size=self.state.shape)
+            new_state = self.state + shift
+            if not self._is_blocked(new_state):
+                self.state = new_state
+                # print("new state", self.state)
+                break
     return self._get_obs()
 
   def _discretize_state(self, state, resolution=1.0):

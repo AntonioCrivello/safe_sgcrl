@@ -74,6 +74,28 @@ class ContrastiveConfig:
   end_index: int = -1
 
 
+  mid_goal_selector_actor = False
+  hidden_layer_sizes: Tuple[int, Ellipsis] = (256, 256)
+  #hidden_layer_sizes: Tuple[int, Ellipsis] = (256, 256)
+  #hidden_layer_sizes: Tuple[int, Ellipsis] = (1024, 1024)
+
+
+  init_weight: Optional[str] = None
+  Q_max: Optional[bool] = False
+  save_init_weight: Optional[bool] = False
+  # Number of actor episodes until which the final goal is used as negative example 
+  # if 0, it is deactivated
+  goal_neg_actor_steps: Optional[int] = 0
+  fixed_goal: Optional[Tuple[float, ...]] = None
+  softmax_repr : Optional[bool] = False
+  cold_q_init: Optional[bool]  = False           # initialise last Q layer near-zero?
+  cold_q_scale: Optional[float] = 1e-12          # magnitude to use when cold-starting
+  goal_pos_actor_steps: Optional[int] = 0  # Number of actor episodes until which the final goal is used as positive example
+  perturbed_negatives_num: Optional[int] = 0  # Whether to sample perturbed negatives
+  perturbed_negatives_goal_num : Optional[int] = 0  # Whether to sample perturbed negatives for goal
+  use_residual_mlp : Optional[bool] = False  # Whether to use residual MLP for representation
+
+
 def target_entropy_from_env_spec(
     spec,
     target_entropy_per_dimension = None,

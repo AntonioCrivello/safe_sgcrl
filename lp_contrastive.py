@@ -8,7 +8,9 @@ Run using multi-threading
 """
 import functools
 from typing import Any, Dict
-
+import json
+import pathlib  # ← add near the other imports
+import json, pathlib, uuid
 from absl import app
 from absl import flags
 import contrastive
@@ -16,20 +18,56 @@ from contrastive import utils as contrastive_utils
 import launchpad as lp
 import numpy as np
 import os
+from new_point_env import PointEnvExtras   # the 20-dim env you just wrote
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('log_dir_path', 'logs/', 'Where to log metrics')
 flags.DEFINE_integer('time_delta_minutes', 5, 'how often to save checkpoints')
-flags.DEFINE_integer('seed', 42, 'Specify seed, only used if use_slurm_array is false')
+flags.DEFINE_integer('seed', 12, 'Specify seed, only used if use_slurm_array is false')
 flags.DEFINE_bool('add_uid', False, 'Whether to add a unique id to the log directory name')
 flags.DEFINE_string('alg', 'contrastive_cpc', 'Algorithm type, e.g. default is contrastive_cpc with no entropy or KL losses')
 flags.DEFINE_string('env', 'sawyer_bin', 'Environment type, e.g. default is sawyer bin')
-flags.DEFINE_integer('num_steps', 8_000_000, 'Number of steps to run', lower_bound=0)
+flags.DEFINE_integer('num_steps', 2_000_000, 'Number of steps to run', lower_bound=0)
 flags.DEFINE_bool('sample_goals', False, 'sample the goal position uniformly according to the environment (corresponds to the original contrastive_rl algorithm)')
+flags.DEFINE_string(
+    'init_weight',          # flag name
+    None,                 # default → no warm-start
+    'Path to a pickled/npz checkpoint containing "policy_params" and '
+    '"q_params" to use as initial weights.')
+flags.DEFINE_bool('Q_max',  False, 'Wether using the actor or the arg max Q policy ')
+# e.g. --hidden_layer_sizes=512 --hidden_layer_sizes=512 --hidden_layer_sizes=256
+flags.DEFINE_multi_integer(
+    'hidden_layer_sizes',
+    [256, 256],                # default
+    'Sizes of each hidden layer in the policy/Q MLP. '
+    'Repeat the flag for each layer, e.g. '
+    '"--hidden_layer_sizes=512 --hidden_layer_sizes=256".')
+flags.DEFINE_integer('goal_neg_actor_steps', 0, 'Number of actor steps to use goal as a negative example', lower_bound=0)
+flags.DEFINE_integer('goal_pos_actor_steps', 0, 'Number of actor steps to use goal as a positive example', lower_bound=0)
+flags.DEFINE_bool('softmax_repr', False, 'Whether to do softmax normalization on the representation. ')
+flags.DEFINE_bool('cold_q_init', False, 'Whether to do cold initialization for the Q network. ')
+flags.DEFINE_float('cold_q_scale', 1e-12 , 'Cold initialization scale for the Q network. ')
+flags.DEFINE_integer('perturbed_negatives_num', 0, 'Number of purturbed negatives to sample. If 0, no perturbation is done.')
+flags.DEFINE_integer('perturbed_negatives_goal_num', 0, 'Number of purturbed negatives to sample for the goal. If 0, no perturbation is done.')
+flags.DEFINE_string('fixed_goal', None, 'Override the fixed goal with a custom goal coordinate as a comma-separated string, e.g., "0.1,0.2,0.3"')
+flags.DEFINE_bool('use_residual_mlp', False, 'whether to use residual MLP for representation learning')
+# --- NEW: random-feature point env ------------------------------------------
+flags.DEFINE_integer(
+    'extra_dim', 8,
+    'How many additional coordinates to add to state/goal in PointEnvExtras.')
+# ---------------------------------------------------------------------------
+
+
+
 
 # fixed goal coordinates for supported environments
 fixed_goal_dict={'point_Spiral11x11': [np.array([5,5], dtype=float), np.array([10,10], dtype=float)],
+                 'point_FourRooms': [np.array([0,0], dtype=float), np.array([10,8], dtype=float)], #[10,8] #[0,10] [5,10]
+                 'point_Impossible' :  [np.array([9,0], dtype=float), np.array([7 , 9], dtype=float)], # hardest right before the final wall [7,9]
+                 'point_Maze11x11' : [np.array([0,0], dtype=float), np.array([5,4], dtype=float)], # hardest [11,11] , [5,4] doable using 1024 network
+                 'point_Wall11x11' : [np.array([2,0], dtype=float), np.array([0,0], dtype=float)], # hardest [2,0] [0,0] easier [2,8] [0,10]
+                 'random_point_Impossible' :  [np.array([9,0], dtype=float), np.array([7 , 9], dtype=float)], # hardest right before the final wall [7,9]
                      #note: sawyer fixed goal positions vary slightly with each episode
                       'sawyer_bin': np.array([0.12, 0.7, 0.02]),
                       'sawyer_box': np.array([0.0, 0.75, 0.133]),
@@ -41,8 +79,17 @@ def get_env(env_name, start_index, end_index, seed, fix_goals = False, fix_goals
     fixed_start_end = fixed_goal_dict[env_name]
   else:
     fixed_start_end = None
+  
+  if FLAGS.fixed_goal:
+    try:
+        # Parse string input like "0.1,0.2,0.3"
+        goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
+        fixed_start_end[1] = goal_coords
+        print(f"Overriding fixed goal with custom input: {fixed_start_end}")
+    except Exception as e:
+        raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
     
-  return contrastive_utils.make_environment(env_name, start_index, end_index, seed=seed, fixed_start_end = fixed_start_end)
+  return contrastive_utils.make_environment(env_name, start_index, end_index, seed=seed, fixed_start_end = fixed_start_end, extra_dim=FLAGS.extra_dim)
 
 
 def get_program(params):
@@ -54,14 +101,28 @@ def get_program(params):
   config = contrastive.ContrastiveConfig(**params)
   
   fix_goals = params['fix_goals']
+  print('Using fixed goals: {}...'.format(fix_goals))
 
   if fix_goals:
     fixed_start_end = fixed_goal_dict[env_name]
   else:
     fixed_start_end = None
+
+
+  if FLAGS.fixed_goal:
+    try:
+        # Parse string input like "0.1,0.2,0.3"
+        goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
+        fixed_start_end[1] = goal_coords
+        print(f"Overriding fixed goal with custom input: {fixed_start_end}")
+    except Exception as e:
+        raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
+
+
+  print('Using fixed start and end: {}...'.format(fixed_start_end))
     
   env_factory = lambda seed: contrastive_utils.make_environment(  # pylint: disable=g-long-lambda
-      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_start_end)
+      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_start_end, extra_dim=FLAGS.extra_dim)
 
   env_factory_no_extra = lambda seed: env_factory(seed)[0]  # Remove obs_dim.
     
@@ -76,10 +137,10 @@ def get_program(params):
       contrastive.make_networks, obs_dim=obs_dim, repr_dim=config.repr_dim,
       repr_norm=config.repr_norm, twin_q=config.twin_q,
       use_image_obs=config.use_image_obs,
-      hidden_layer_sizes=config.hidden_layer_sizes)
+      hidden_layer_sizes=config.hidden_layer_sizes, config=config)
     
   env_factory_fixed_goals = lambda seed: contrastive_utils.make_environment(  # pylint: disable=g-long-lambda
-      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_goal_dict[env_name])
+      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_goal_dict[env_name], extra_dim=FLAGS.extra_dim)
   env_factory_no_extra_fixed_goals = lambda seed: env_factory_fixed_goals(seed)[0]  # Remove obs_dim.
     
   agent = contrastive.DistributedContrastive(
@@ -103,6 +164,17 @@ def main(_):
   #   2D nav: point_{Spiral11x11}
   env_name = FLAGS.env
   print('Using env {}...'.format(env_name))
+  goal_coords = fixed_goal_dict.get(env_name, None)[1]
+
+
+  if FLAGS.fixed_goal:
+    print(f"Overriding fixed goal with custom input: {FLAGS.fixed_goal}")
+    try:
+        # Parse string input like "0.1,0.2,0.3"
+        goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
+        print(f"Overriding fixed goal with custom input: {goal_coords}")
+    except Exception as e:
+        raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
   
   seed_idx = FLAGS.seed
   print('Using random seed {}...'.format(seed_idx))
@@ -124,8 +196,24 @@ def main(_):
   print('Using alg {}...'.format(alg))
   params['alg_name'] = alg
   params['fix_goals'] = not FLAGS.sample_goals
+  params['hidden_layer_sizes'] = tuple(FLAGS.hidden_layer_sizes)
+  params['goal_neg_actor_steps'] = FLAGS.goal_neg_actor_steps
+  params['use_residual_mlp'] = FLAGS.use_residual_mlp
+  params['goal_pos_actor_steps'] = FLAGS.goal_pos_actor_steps
   add_uid = FLAGS.add_uid
+  params['softmax_repr'] = FLAGS.softmax_repr
+  params['cold_q_init'] = FLAGS.cold_q_init
+  params['perturbed_negatives_num'] = FLAGS.perturbed_negatives_num
+  params['perturbed_negatives_goal_num'] = FLAGS.perturbed_negatives_goal_num
+  params['cold_q_scale'] = FLAGS.cold_q_scale
+  if FLAGS.sample_goals:
+    params['fixed_goal'] = None
+  else:
+    params['fixed_goal'] = tuple(goal_coords.astype(float))
+    print('Using fixed goal: {}...'.format(params['fixed_goal']))
   params['add_uid'] = add_uid
+  params['Q_max'] = FLAGS.Q_max
+  params['init_weight'] = FLAGS.init_weight
   print('Adding uid: {}...'.format(params['add_uid']))
   
   params['log_dir'] = FLAGS.log_dir_path
@@ -142,6 +230,25 @@ def main(_):
     params['add_mc_to_td'] = True
   else:
     raise NotImplementedError('Unknown method: %s' % alg)
+
+  # === NEW BLOCK: persist the run configuration =============
+  run_dir = pathlib.Path(params['log_dir']) / f"{params['alg_name']}_{params['env_name']}_{params['seed']}"
+
+  # If you add a UID elsewhere, replicate it here:
+  if params.get('add_uid'):               # True/False in FLAGS
+      run_dir = run_dir.with_name(run_dir.name + f"_{uuid.uuid4().hex[:6]}")
+
+  run_dir.mkdir(parents=True, exist_ok=True)
+
+  # --------------------------------------------------------------
+  # Persist the configuration *inside* that run folder.
+  config_file = run_dir / 'config.json'
+  with config_file.open('w') as f:
+      json.dump(params, f, indent=2, sort_keys=True)
+
+  print(f"Saved run config to {config_file}")
+    # ==========================================================
+
 
 
   program = get_program(params)
