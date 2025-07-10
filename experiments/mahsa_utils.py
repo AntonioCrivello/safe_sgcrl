@@ -322,10 +322,50 @@ def eval_fixed_goal_exploration(alpha, misc_params, env_name, log_dir, seeds_lis
                     # print(f"[tanh-range] 1σ band maps to ≈ [{high-low}] in tanh space")
 
 
-
+                
                 timestep = env.step(action)
                 positions_dict[seed][-1].append(deepcopy(env.state[:2]))
-                print("obs", env.state[:2])
+                print("obs", obs)
+
+                # obs_dim = obs.shape[0] // 2
+                # ## getting the psi and q along the path
+                # obs_for_psi_s = np.zeros_like(obs)
+                # obs_for_psi_s[:obs_dim] = obs[:obs_dim]        # agent state
+                # obs_for_psi_s[obs_dim:] = obs[:obs_dim]        # replace goal with same agent state
+
+                # _, phi_s_a, psi_s = networks.q_network.apply(
+                #     trained_learner_state.q_params,
+                #     obs_for_psi_s[None, :],
+                #     action[None, :]
+                # )
+
+                # goal_obs = np.zeros_like(obs)
+                # goal_obs[obs_dim:] = env.goal
+
+                # _, _, psi_g = networks.q_network.apply(
+                #     trained_learner_state.q_params,
+                #     goal_obs[None, :],
+                #     action[None, :]
+                # )
+
+                # --- Compute inner products
+                # psi_similarity = np.dot(np.array(psi_s).squeeze(), np.array(psi_g).squeeze())
+                # q_value = np.dot(np.array(phi_s_a).squeeze(), np.array(psi_g).squeeze())
+                # # Convert to NumPy arrays
+                # psi_s_np = np.array(psi_s).squeeze()
+                # psi_g_np = np.array(psi_g).squeeze()
+                # # --- Log or print
+                # print(f"⟨ψ(s), ψ(g)⟩ = {psi_similarity:.4f}   (psi similarity)")
+                # print(f"⟨φ(s,a), ψ(g)⟩ = {q_value:.4f}       (Q-value)")
+                # # Normalize vectors
+                # psi_s_norm = psi_s_np / (np.linalg.norm(psi_s_np) + 1e-8)
+                # psi_g_norm = psi_g_np / (np.linalg.norm(psi_g_np) + 1e-8)
+
+                # # Compute cosine similarity (normalized inner product)
+                # normalized_psi_similarity = np.dot(psi_s_norm, psi_g_norm)
+
+                # # Print normalized psi similarity
+                # print(f"cosine similarity ⟨ψ(s), ψ(g)⟩ = {normalized_psi_similarity:.4f}")
 
 
                 t += 1

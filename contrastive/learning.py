@@ -22,6 +22,7 @@ from jax import random
 import os
 from default import make_default_logger
 from pathlib import Path
+import os, functools, tensorflow as tf, jax
 
 class TrainingState(NamedTuple):
   """Contains training state for the learner."""
@@ -71,6 +72,12 @@ class ContrastiveLearner(acme.Learner):
     self._num_sgd_steps_per_step = config.num_sgd_steps_per_step
     self._obs_dim = config.obs_dim
     self._use_td = config.use_td
+    self.config = config
+    self._reset_counter = 0
+    self._networks = networks
+    self._policy_optimizer = policy_optimizer
+    self._q_optimizer = q_optimizer
+    self.adaptive_entropy_coefficient = adaptive_entropy_coefficient
     
     if adaptive_entropy_coefficient:
       # alpha is the temperature parameter that determines the relative
@@ -102,7 +109,8 @@ class ContrastiveLearner(acme.Learner):
                     policy_params,
                     target_q_params,
                     transitions,
-                    key):
+                    key,
+                    use_goal_neg: bool = False):
       batch_size = transitions.observation.shape[0]
       # Note: We might be able to speed up the computation for some of the
       # baselines to making a single network that returns all the values. This
@@ -182,7 +190,55 @@ class ContrastiveLearner(acme.Learner):
       else:  # For the MC losses.
         def loss_fn(_logits):  # pylint: disable=invalid-name
           if config.use_cpc:
-            return (optax.softmax_cross_entropy(logits=_logits, labels=I)
+            #jax.debug.print("[DBG] use goal neg {}", use_goal_neg)
+            fixed_goal = self.config.fixed_goal
+            fixed_goal = jnp.asarray(fixed_goal, dtype=jnp.float32)   # shape (d,)
+            B = _logits.shape[0]
+            
+            # ## Adding goal as a negative example
+            labels = I
+            if (fixed_goal is not None) and use_goal_neg:
+              # ensure fixed_goal is a JAX array, not a Python list
+              #debug.print("[DBG] fixed_goal is not None, using it as a negative example")
+              
+              
+
+
+              # split current states  s  |  g
+              s, _ = jnp.split(transitions.observation,
+                              [config.obs_dim], axis=1)
+              
+
+      
+
+              # replicate the fixed goal so we have B copies
+              g_fixed = jnp.broadcast_to(fixed_goal, (B, fixed_goal.shape[-1]))
+
+              obs_fixed = jnp.concatenate([s, g_fixed], axis=1)        # (B , 2*obs_dim)
+              fixed_logits, _, _ = networks.q_network.apply(
+                  q_params, obs_fixed, transitions.action)             # (B [,2])
+              fixed_logits = fixed_logits[:, 0]    
+
+              # ensure shape is (B ,1)  or  (B ,1 ,2) in twin-Q case
+              if fixed_logits.ndim == 1:
+                  fixed_logits = fixed_logits[:, None]
+              else:
+                  fixed_logits = fixed_logits[:, None, :]
+
+              # append as a new column on the right
+              _logits = jnp.concatenate([_logits, fixed_logits], axis=1)
+              #debug.print("[DBG] logits shape after concat {}", _logits.shape)
+
+              # extend the label matrix (all zeros → still a negative)
+              labels = jnp.concatenate(
+                      [I, jnp.zeros((B, 1), I.dtype)],
+                      axis=1)
+            ## Using backward loss
+            if config.backward_loss:
+              _logits = _logits.T
+              return (optax.softmax_cross_entropy(logits=_logits, labels=labels))
+            else:
+              return (optax.softmax_cross_entropy(logits=_logits, labels=labels)
                     + 0.01 * jax.nn.logsumexp(_logits, axis=1)**2)
           else:
             return optax.sigmoid_binary_cross_entropy(logits=_logits, labels=I)
@@ -266,8 +322,10 @@ class ContrastiveLearner(acme.Learner):
     actor_grad = jax.value_and_grad(actor_loss, has_aux=True)
 
     def update_step(
-        state,
-        transitions
+            state,
+            transitions,
+            *,                       # keep it a keyword-only arg
+            use_goal_neg: bool,
     ):
   
       key, key_alpha, key_critic, key_actor = jax.random.split(state.key, 4)
@@ -279,10 +337,12 @@ class ContrastiveLearner(acme.Learner):
       else:
         alpha = config.entropy_coefficient
 
-                       
+      # (critic_loss, critic_metrics), critic_grads = critic_grad(
+      #     state.q_params, state.policy_params, state.target_q_params,
+      #     transitions, key_critic)
       (critic_loss, critic_metrics), critic_grads = critic_grad(
           state.q_params, state.policy_params, state.target_q_params,
-          transitions, key_critic)
+          transitions, key_critic, use_goal_neg=use_goal_neg)
 
       # Apply critic gradients
       critic_update, q_optimizer_state = q_optimizer.update(critic_grads, state.q_optimizer_state)
@@ -345,12 +405,26 @@ class ContrastiveLearner(acme.Learner):
     # Iterator on demonstration transitions.
     self._iterator = iterator
 
-    update_step = utils.process_multiple_batches(update_step,config.num_sgd_steps_per_step)
-    # Use the JIT compiler.
-    if config.jit:
-      self._update_step = jax.jit(update_step)
-    else:
-      self._update_step = update_step
+    # update_step = utils.process_multiple_batches(update_step,config.num_sgd_steps_per_step)
+    # # Use the JIT compiler.
+    # if config.jit:
+    #   self._update_step = jax.jit(update_step)
+    # else:
+    #   self._update_step = update_step
+
+    def make_update(use_goal_neg: bool):
+      # 1. freeze the flag so the inner fn now has *only* (state, trans)
+      step_fn = functools.partial(update_step, use_goal_neg=use_goal_neg)
+      # 2. let Acme split big batches if requested
+      step_fn = utils.process_multiple_batches(
+          step_fn, config.num_sgd_steps_per_step
+      )
+      # 3. JIT if desired (no extra static args now)
+      return jax.jit(step_fn) if config.jit else step_fn
+
+    self._update_step_true  = make_update(True)   # goal is a negative
+    self._update_step_false = make_update(False)  # stop using it
+
 
     def make_initial_state(key):
       """Initialises the training state (parameters and optimiser state)."""
@@ -370,8 +444,9 @@ class ContrastiveLearner(acme.Learner):
           q_params=q_params,
           target_q_params=q_params,
           key=key)
-
+      print("Initialising networks with random parameters.", flush = True)
       if adaptive_entropy_coefficient:
+        print("Using adaptive entropy coefficient.", flush = True)
         state = state._replace(alpha_optimizer_state=alpha_optimizer_state,
                                alpha_params=log_alpha)
         
@@ -389,7 +464,116 @@ class ContrastiveLearner(acme.Learner):
     with jax.profiler.StepTraceAnnotation('step', step_num=self._counter):
       sample = next(self._iterator)
       transitions = types.Transition(*sample.data)
-      self._state, metrics = self._update_step(self._state, transitions) 
+
+
+
+      def reset_network_state():
+        """Reset policy, Q, and target Q params — keep everything else."""
+        key_policy, key_q, key = jax.random.split(self._state.key, 3)
+        new_policy_params = self._networks.policy_network.init(key_policy)
+        new_q_params = self._networks.q_network.init(key_q)
+
+        # Replace only the desired fields
+        new_state = self._state._replace(
+            policy_params=new_policy_params,
+            policy_params_prev=new_policy_params,
+            q_params=new_q_params,
+            target_q_params=new_q_params,
+            key=key
+        )
+        
+        return new_state
+
+      ## Added logic to support adding fixed goal as negative example
+      counts = self._counter.get_counts()          # Python dict
+      actor_steps = counts.get('actor_steps', 0)
+
+
+      
+      ## reset the network weights
+      self._reset_counter += 1
+      if actor_steps > 0 and self.config.weight_reset_interval> 0:
+        if self._reset_counter > self.config.weight_reset_interval:
+          self._reset_counter = 0
+          print(f"💥 Resetting networks at actor step {actor_steps}", flush= True)
+          self._state = reset_network_state()
+          
+
+
+
+
+    
+      # NEW -- randomly replace 20 % of future states with the fixed goal
+      ## this function only works for point env enviornment needs to be adjusted for other enviornments
+      # ──────────────────────────────────────────────────────────────
+      if self.config.fixed_goal is not None and actor_steps < self.config.goal_pos_actor_steps:
+        obs        = transitions.observation           # (B, obs_dim*2)
+        actions    = transitions.action                # (B, act_dim)
+        B          = obs.shape[0]
+        obs_dim    = self.config.obs_dim               # e.g. 2
+        act_dim    = actions.shape[-1]                 # e.g. 2
+        frac       = self.config.goal_pos_frac         # e.g. 0.2
+        k1, k2     = jax.random.split(self._state.key)
+
+        idx        = jax.random.choice(
+                      k1, B,
+                      (max(1, int(B * frac)),),
+                      replace=False)
+
+        fixed_goal = jnp.asarray(self.config.fixed_goal, dtype=obs.dtype)
+
+        # ---- DEBUG PRINT: Before changing anything
+        # idx0 = idx[0]
+        # before_obs = obs[idx0]
+        # before_action = actions[idx0]
+        # print("▶ Before update:")
+        # print("  obs[idx0]:", np.array(before_obs))
+        # print("  state    :", np.array(before_obs[:obs_dim]))
+        # print("  goal     :", np.array(before_obs[obs_dim:2*obs_dim]))
+        # print("  action   :", np.array(before_action))
+
+        # Set goal part
+        obs = obs.at[idx, obs_dim:2*obs_dim].set(
+                jnp.broadcast_to(fixed_goal, (idx.size, obs_dim)))
+
+        # Sample random actions ∈ [-1, 1]
+        k3, k2 = jax.random.split(k2)
+        random_actions = jax.random.uniform(
+            k3, shape=(idx.size, act_dim),
+            minval=-1.0, maxval=1.0)
+
+        # Set the actions directly in transitions.action
+        actions = actions.at[idx].set(random_actions)
+
+        # ---- DEBUG PRINT: After update
+        # after_obs = obs[idx0]
+        # after_action = actions[idx0]
+        # print("▶ After update:")
+        # print("  obs[idx0]:", np.array(after_obs))
+        # print("  state    :", np.array(after_obs[:obs_dim]))
+        # print("  goal     :", np.array(after_obs[obs_dim:2*obs_dim]))
+        # print("  action   :", np.array(after_action))
+
+        # Replace transitions
+        transitions = transitions._replace(
+            observation=obs,
+            action=actions
+        )
+        self._state = self._state._replace(key=k2)
+
+
+
+      ### Goal negative sampling
+      # If the number of actor steps is less than goal_neg_actor_steps then use the goal as a negative example
+      use_goal_neg  = actor_steps < self.config.goal_neg_actor_steps
+      update_fn = (self._update_step_true
+                 if use_goal_neg
+                 else self._update_step_false)
+
+      
+      self._state, metrics = update_fn(self._state, transitions)
+
+      #self._state, metrics = self._update_step(self._state, transitions) 
     
     # Compute elapsed time.
     timestamp = time.time()

@@ -17,7 +17,7 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib/nvidia"
 #devices=(0 1 2 3 4 5 6 7)   
 
 #seeds=(2 3 4 5) # List of seeds to run
-seeds=(34340 34341 34342 34343 34344 34345 34346 34347)
+seeds=(900 901 902 903 904 905 906 907)
 ###### 0  0  1  1  0  0  0  0  0  1  0  0  0  0  0  0  0  1  0  1
 devices=(7)        # GPU index for each run
 
@@ -28,11 +28,11 @@ for idx in "${!seeds[@]}"; do
   CUDA_VISIBLE_DEVICES="" \
   nohup python -m experiments.similarity_posterior_exp \
     --alpha 0.1 \
-    --env_name random_point_Impossible \
+    --env_name point_Impossible \
     --seed $SEED \
     --log_dir logs \
     --alg contrastive_cpc \
-    --ckpt_list   2 3 4 5 6 7 8\
+    --ckpt_list  1 2 3 4 5 6 7 8 9 10 15 20 25 30 35 40 45 50 55 60 65 70 \
     --NUM_AXES 2 \
     --NUM_EPISODES 5 \
     --plot_psi \

@@ -58,7 +58,9 @@ flags.DEFINE_integer(
     'How many additional coordinates to add to state/goal in PointEnvExtras.')
 # ---------------------------------------------------------------------------
 
-
+flags.DEFINE_float('goal_pos_frac', 0.05, 'fraction of fake goal positive sampling in the critic loss')
+flags.DEFINE_integer('weight_reset_interval', 0, 'Interval for resetting weights, 0 means no reset')
+flags.DEFINE_bool('backward_loss', False, 'Whether to use backward loss')
 
 
 # fixed goal coordinates for supported environments
@@ -215,9 +217,13 @@ def main(_):
   params['Q_max'] = FLAGS.Q_max
   params['init_weight'] = FLAGS.init_weight
   print('Adding uid: {}...'.format(params['add_uid']))
+
+  params['goal_pos_frac'] = FLAGS.goal_pos_frac  # whether to use naive sampling for the goal
   
   params['log_dir'] = FLAGS.log_dir_path
   params['time_delta_minutes'] = FLAGS.time_delta_minutes
+  params['weight_reset_interval'] = FLAGS.weight_reset_interval
+  params['backward_loss'] = FLAGS.backward_loss
   
   if alg == 'contrastive_cpc':
     params['use_cpc'] = True
@@ -231,6 +237,8 @@ def main(_):
   else:
     raise NotImplementedError('Unknown method: %s' % alg)
 
+
+  
   # === NEW BLOCK: persist the run configuration =============
   run_dir = pathlib.Path(params['log_dir']) / f"{params['alg_name']}_{params['env_name']}_{params['seed']}"
 

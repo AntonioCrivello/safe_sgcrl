@@ -94,7 +94,9 @@ class ContrastiveConfig:
   perturbed_negatives_num: Optional[int] = 0  # Whether to sample perturbed negatives
   perturbed_negatives_goal_num : Optional[int] = 0  # Whether to sample perturbed negatives for goal
   use_residual_mlp : Optional[bool] = False  # Whether to use residual MLP for representation
-
+  goal_pos_frac : Optional[float] = 0.05  # Fraction of fake goal positive sampling in the critic loss
+  weight_reset_interval: Optional[int] = 0  # Interval for resetting weights
+  backward_loss: Optional[bool] = False  # Whether to use backward loss
 
 def target_entropy_from_env_spec(
     spec,

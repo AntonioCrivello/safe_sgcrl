@@ -16,7 +16,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 # 3) Configuration
 # ------------------------------------------------------------------
 ENV="point_Spiral11x11"
-ENV="point_Impossible"
+ENV="point_Wall11x11"
 LOG_DIR="logs"
 ACTION_MODE="actor_max"
 GRID_WIDTH="0.01"
@@ -24,11 +24,11 @@ NUM_EPISODES=1
 export CUDA_VISIBLE_DEVICES=""  # Force CPU
 
 # List of seeds
-SEEDS=(5)
+SEEDS=(101 102 103 104 105 106 107)
 #SEEDS=(5)
 
 # List of checkpoints
-CKPTS=(1 2 3 4 5 6 7 8 9 10 12 15 20 25 30 35 40 45 50 55 60 70)
+CKPTS=(25 30 35 40 45 50 55 60)
 #CKPTS=(8 9)
 CKPT_ARGS="${CKPTS[@]}"  # Expand into --ckpts list
 

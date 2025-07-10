@@ -36,9 +36,20 @@ class PointEnvExtras():
         self._action_noise = 0.01
 
         # Random feature tensor, values ∈ [0, H]
-        self._features = self._rng.uniform(
-            0.0,self._height , size=(self._height, self._width, self._extra_dim)
-        ).astype(np.float32)
+        # self._features = self._rng.uniform(
+        #     0.0,self._height , size=(self._height, self._width, self._extra_dim)
+        # ).astype(np.float32)
+
+        # Initialize features to all zeros
+        self._features = np.zeros((self._height, self._width, self._extra_dim), dtype=np.float32)
+
+        # Define special cells where features should be 1
+        # Format: list of (row, col) positions (i.e., y, x)
+        special_cells = [(6 , 1), (3 , 5), (4 , 2), (7 , 9-1), (0 , 6), (6 , 0), (8, 2)]  # <- Replace with your own coordinates
+
+        # Set those cells to 1 in every feature dimension
+        for (i, j) in special_cells:
+             self._features[i, j, :] = np.ones(self._extra_dim) * 10 # or
 
         # Redefine the observation space (low/high vectors)
         low = np.concatenate(
@@ -125,7 +136,7 @@ class PointEnvExtras():
         self._timestep = 0
         
         if self._fixed_start_end is not None:
-            print("Using fixed start and end positions in the new enviornment")
+            #print("Using fixed start and end positions in the new enviornment")
             # fix the starting and ending position of the agent
             self.state = self._fixed_start_end[0]
             self.goal = self._fixed_start_end[1]

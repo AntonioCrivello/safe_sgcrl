@@ -97,6 +97,7 @@ plot_psi_inner_product = args.plot_psi_inner_product
 plot_phi_psi_inner_product = args.plot_phi_psi_inner_product
 uid = args.uid
 
+
 # if project is not True:
 #     plot_phi_psi = False
 #     plot_posterior = False
@@ -131,7 +132,7 @@ if env_name == 'point_Spiral11x11':
     }
     ct = 11
     EPISODE_LENGTH = 100
-elif env_name == 'point_Impossible' or 'random_point_Impossible':
+elif env_name == 'point_Impossible' or env_name ==  'random_point_Impossible':
     point_map = np.array([[0, 1, 0, 0, 0, 0, 0, 0, 0],
                   [0, 1, 0, 1, 1, 1, 1, 1, 0],
                   [0, 1, 0, 0, 0, 0, 1, 0, 0],
@@ -148,6 +149,7 @@ elif env_name == 'point_Impossible' or 'random_point_Impossible':
     ct = 9
     EPISODE_LENGTH = 50
 elif env_name == 'point_Wall11x11':
+    print("using point_Wall11x11")
     point_map = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
                   [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
@@ -229,6 +231,7 @@ for ckpt_num in tqdm(ckpt_list):
         norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
         # for ax, (data, title) in zip(axes, plot_data):
             # Plot map and heatmap
+        print("point_map", point_map)
         ax.imshow(point_map, cmap='binary', extent=[0, ct, 0, ct])
         heatmap = ax.scatter(goal_locations[:, 1], max_y - goal_locations[:, 0], c=data, s=4, alpha=0.8, cmap=custom_cmap, norm=norm)
         plt.colorbar(heatmap, ax=ax, label=title.lower())
@@ -248,7 +251,7 @@ for ckpt_num in tqdm(ckpt_list):
         ax.set_ylabel('y')
         ax.set_xlim(axes_lims[0])
         ax.set_ylim(axes_lims[1])
-        ax.set_title(f"{title} - checkpoint {ckpt_num}")
+        ax.set_title(f"{title} - checkpoint {ckpt_num}- select action mode: {action_mode}")
 
         plt.tight_layout()
         # Create directory path
@@ -259,7 +262,7 @@ for ckpt_num in tqdm(ckpt_list):
         if project is True:
             name = f"psi_projected_{initial_point_idx}"
         else:
-            name = f"psi"
+            name = f"psi_{action_mode}"
         # Save the figure as PDF or PNG — use whichever you prefer
         save_path = os.path.join(plot_dir, f"{name}_{ckpt_num}.png")
         plt.savefig(save_path, dpi=300)

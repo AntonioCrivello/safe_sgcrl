@@ -33,7 +33,7 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 # seeds=(4000)
 # devices=(7)
 
-seeds=(6786588)
+seeds=(6798765)
 devices=(0 1 2 3 4 5 6 7)
 # ➊  Add this block just after you define the seeds / devices
 hidden_sizes=(256 256 256 256 256 256 )  # 12 layers
@@ -50,10 +50,11 @@ for idx in "${!seeds[@]}"; do
   echo "▶ Launching seed $SEED on GPU $DEV  →  $LOG"
     CUDA_VISIBLE_DEVICES=$DEV \
     nohup python -u lp_contrastive.py \
-      --env random_point_Impossible \
+      --env point_Impossible \
       --seed "$SEED" \
       --num_steps 1000000 \
       "${hidden_flags[@]}" \
+      --weight_reset_interval 20 \
       > "$LOG" 2>&1 &   # redirection now belongs to the nohup command
 done
 
@@ -67,3 +68,6 @@ echo "✅ All jobs launched (logs in lp_contrastive_seed*.out)"
             # --cold_q_init \
             # --cold_q_scale 1e-12 \
                   # --perturbed_negatives_goal_num 5 \
+      #                   --goal_neg_actor_steps 50000 \
+      # --goal_pos_actor_steps 50000 \
+      # --goal_pos_frac 0.05 \
