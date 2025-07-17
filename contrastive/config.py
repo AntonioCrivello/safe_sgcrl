@@ -5,6 +5,10 @@ from typing import Any, Optional, Union, Tuple
 from acme import specs
 from acme.adders import reverb as adders_reverb
 import numpy as onp
+# ─── imports ────────────────────────────────────────────────────────────
+from dataclasses import field          # NEW
+import jax.numpy as jnp                # NEW
+from typing import Tuple               # if not already present
 
 
 @dataclasses.dataclass
@@ -97,6 +101,18 @@ class ContrastiveConfig:
   goal_pos_frac : Optional[float] = 0.05  # Fraction of fake goal positive sampling in the critic loss
   weight_reset_interval: Optional[int] = 0  # Interval for resetting weights
   backward_loss: Optional[bool] = False  # Whether to use backward loss
+  negative_goal_repr : Optional[bool] = True  # Whether to use negative goal representation in the designated area
+
+  stop_grad_fixed: Optional[bool] = True                     # freeze grads on fixed goal
+    ## low x y
+    ## high x y
+  # region_bounds: Tuple[jnp.ndarray, jnp.ndarray] = field(
+  #     default_factory=lambda: (
+  #         jnp.array([5, 0]),   # lower corner
+  #         jnp.array([11,  5])    # upper corner
+  #     )
+  # )
+  region_bounds: Tuple[jnp.ndarray, jnp.ndarray] = None
 
 def target_entropy_from_env_spec(
     spec,

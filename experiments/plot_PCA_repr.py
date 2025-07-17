@@ -67,7 +67,7 @@ def main():
     # name the file by checkpoint only
     # fname = f"vis_ckpt{ckpt}.png"
     # save_current_fig(os.path.join(seed_dir, fname))
-    out_dir = os.path.join("experiments", "plots", f"{args.env}_{args.seed}")
+    out_dir = os.path.join("experiments", "old_plots", f"{args.env}_{args.seed}")
     os.makedirs(out_dir, exist_ok=True)
 
 
@@ -84,7 +84,7 @@ def main():
             num_episodes = args.num_episodes,
         )
 
-        fname = f"vis_ckpt{ckpt}.png"
+        fname = f"vis_wphi_ckpt{ckpt}.png"
         save_current_fig(os.path.join(out_dir, fname))
 
     print(f"✓ All plots written to  {out_dir}/")

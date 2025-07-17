@@ -124,7 +124,7 @@ def load_checkpoint(alpha, misc_params, env_name, log_dir, seed, fix_goals = Fal
         if env_name == 'point_Spiral11x11':
             fixed_start_end = [np.array([5,5], dtype=float), np.array([10,10], dtype=float)]
         elif env_name == 'point_FourRooms':
-            fixed_start_end = [np.array([0.5,0.5], dtype=float), np.array([8.5,8.5], dtype=float)]
+            fixed_start_end = [np.array([0.5,0.5], dtype=float), np.array([10,8], dtype=float)] #10 , 8
         elif env_name == 'point_Impossible':
             fixed_start_end = [np.array([9,0], dtype=float), np.array([7 , 9], dtype=float)] # [7,9]
         elif env_name == 'random_point_Impossible':
@@ -464,6 +464,33 @@ def get_psi_norms(env_name, log_dir,  seed, ckpt_num=None, alg = 'contrastive_cp
         random_goals[:, obs_dim+axis] *= axis_max - axis_min
         random_goals[:, obs_dim+axis] += axis_min
 
+    # ── 1. after you set N_SAMPLES ─────────────────────────────────────
+    EXTRA_AROUND_GOAL = 3000          # how many focused samples
+    SIGMA_GOAL        = 0.30          # std-dev (in grid units) around the goal
+
+        # ── 3. NEW: concentrated cloud around the fixed goal ───────────────
+    goal_xy = env.goal.astype(np.float32)          # shape (2,)
+
+    # sample EXTRA_AROUND_GOAL points from 𝒩(goal, σ² I)
+    focus_xy = np.random.normal(loc=goal_xy,
+                                scale=SIGMA_GOAL,
+                                size=(EXTRA_AROUND_GOAL, obs_dim)).astype(np.float32)
+
+    # keep them inside axes_lims
+    for axis in (0, 1):
+        lo, hi = axes_lims[axis]
+        focus_xy[:, axis] = np.clip(focus_xy[:, axis], lo, hi)
+
+    # build full (state-goal) rows – state part 0, goal part = focus_xy
+    focus_rows = np.zeros((EXTRA_AROUND_GOAL, 2*obs_dim), dtype=np.float32)
+    focus_rows[:, obs_dim:] = focus_xy
+
+    # ── 4. concatenate uniform + focused samples ───────────────────────
+    random_goals = np.concatenate([random_goals, focus_rows], axis=0)
+    TOTAL_SAMPLES = random_goals.shape[0]          # N_SAMPLES + EXTRA_AROUND_GOAL
+    print(f"[sampling] {TOTAL_SAMPLES} total   "
+        f"({EXTRA_AROUND_GOAL} near goal, {N_SAMPLES} uniform)")
+
     goal_locations = random_goals[:, obs_dim:].copy()
     # obs_batch = np.broadcast_to(obs, (N_SAMPLES, 2*obs_dim)).copy()
     # obs_batch[:, obs_dim:] = 0
@@ -471,9 +498,10 @@ def get_psi_norms(env_name, log_dir,  seed, ckpt_num=None, alg = 'contrastive_cp
     # Set both state and goal parts to the same random goal
 
     ## both parts are random states we just sampld, we wanna calculate both their psi similarity with the goal and their phi psi similarity
-    obs_batch = np.zeros((N_SAMPLES, 2 * obs_dim), dtype=np.float32)
+    obs_batch = np.zeros((N_SAMPLES + EXTRA_AROUND_GOAL, 2 * obs_dim), dtype=np.float32)
     obs_batch[:, :obs_dim] = goal_locations 
     obs_batch[:, obs_dim:] = goal_locations 
+    print("obs_batch", obs_batch[:5])
 
     # INSERT NEW CODE HERE
     dist = networks.policy_network.apply(
@@ -498,7 +526,8 @@ def get_psi_norms(env_name, log_dir,  seed, ckpt_num=None, alg = 'contrastive_cp
     psi_norms = np.diag(np.einsum('ik,jk->ij', g_repr_sa, g_repr_sa))
 
     # uniformly sample states within axes_lims
-    random_states = np.random.rand(N_SAMPLES, 2*obs_dim)
+    random_states = np.random.rand(N_SAMPLES + EXTRA_AROUND_GOAL, 2*obs_dim)
+    ## second part of the random states is zero
     random_states[:, obs_dim:] = 0
     # transforms U([0,1)) -> U(axis_min, axis_max) for each axis (0, 1, 2)
     for axis in (0, 1):
@@ -507,10 +536,12 @@ def get_psi_norms(env_name, log_dir,  seed, ckpt_num=None, alg = 'contrastive_cp
         random_states[:, axis] += axis_min
 
 
-    fixed_goal_obs_batch = np.broadcast_to(obs, (N_SAMPLES, 2*obs_dim)).copy()
+    fixed_goal_obs_batch = np.broadcast_to(obs, (N_SAMPLES + EXTRA_AROUND_GOAL, 2*obs_dim)).copy()
+    # first part of the fixed goal obs batch is 0 second part is the goal
     fixed_goal_obs_batch[:, :obs_dim] = 0
     fixed_goal_obs_batch = fixed_goal_obs_batch + random_states
     dist = networks.policy_network.apply(trained_learner_state.policy_params, fixed_goal_obs_batch)
+    print("fixed_goal_obs_batch", fixed_goal_obs_batch[:5])
     
     action_batch = np.array(dist.mode())
 
@@ -806,19 +837,39 @@ def run_pca_on_visited_cells(
 
         # policy & critic
         dist_r = networks.policy_network.apply(learner_state.policy_params, rand_obs)
-        act_r  = np.asarray(dist_r.mode())
+        #act_r  = np.asarray(dist_r.mode())
+        act_dim = 2  
+        act_r = np.random.uniform(
+            low=-1.0, high=1.0,
+            size=(positions.shape[0], act_dim)      # (T, 2)
+        ).astype(np.float32)
         _, phi_rand, psi_rand = networks.q_network.apply(learner_state.q_params, rand_obs, act_r)
+
+        # --- φ(s, a_rand) along the visited states -----------------
+        act_dim = 2                                 # ← your env uses 2-D actions
+        rand_act_batch = np.random.uniform(
+            low=-1.0, high=1.0,
+            size=(positions.shape[0], act_dim)      # (T, 2)
+        ).astype(np.float32)
+
+        _, phi_sa_rand_path, _ = networks.q_network.apply(
+            learner_state.q_params, obs_batch, rand_act_batch
+        )
+
 
         
         # ----- 5. t-SNE & plotting ---------------------------------------------
         # stack _all_ points you want to visualize at once:
         all_vecs = np.concatenate([
-            phi_sa,           # φ(s,a)
-            psi_s,            # ψ(s)
-            psi_g,   # ψ(g)
-            psi_rand,         # random ψ(s)
-            phi_rand          # random φ(s,a)
+            phi_sa,                 # φ(s,a)_policy
+            phi_sa_rand_path,       # φ(s,a_rand)      ← new
+            psi_s,                  # ψ(s)
+            psi_g,                  # ψ(g)
+            psi_rand,               # random ψ(s)
+            phi_rand                # random φ(s,a)
         ], axis=0)
+
+       
 
 
         if pca:
@@ -833,27 +884,47 @@ def run_pca_on_visited_cells(
         print("PCA variance explained:", pca.explained_variance_ratio_.sum())
 
 
-        # now split them back out
-        Nφ = phi_sa.shape[0]
-        Nψ = psi_s.shape[0]
-        Ng = 1
-        Nr = psi_rand.shape[0]
+         # sizes
+        Nφp   = phi_sa.shape[0]
+        Nφpr  = phi_sa_rand_path.shape[0]            # new
+        Nψ    = psi_s.shape[0]
+        Ng    = 1
+        Nr    = psi_rand.shape[0]
+        Nφrs  = phi_rand.shape[0]
 
-        φ_2d   = all_2d[           :   Nφ]
-        ψ_2d   = all_2d[Nφ         : Nφ+Nψ]
-        g2d    = all_2d[Nφ+Nψ      : Nφ+Nψ+Ng]
-        ψr_2d  = all_2d[Nφ+Nψ+Ng   : Nφ+Nψ+Ng+Nr]
-        φr_2d  = all_2d[Nφ+Nψ+Ng+Nr:             ]
+        idx = 0
+        φp_2d       = all_2d[idx : idx+Nφp];  idx += Nφp
+        φp_rand_2d  = all_2d[idx : idx+Nφpr]; idx += Nφpr   # new
+        ψ_2d        = all_2d[idx : idx+Nψ];   idx += Nψ
+        g2d         = all_2d[idx : idx+Ng];   idx += Ng
+        ψr_2d       = all_2d[idx : idx+Nr];   idx += Nr
+        φr_2d       = all_2d[idx : idx+Nφrs]
 
         # NEW – build a per-state time index and colormap
-        t_idx = np.arange(Nφ)                                # 0 … Nφ-1
+        t_idx = np.arange(Nφp)                                # 0 … Nφ-1
         norm  = plt.Normalize(vmin=t_idx.min(), vmax=t_idx.max())
         cmap  = plt.cm.viridis
 
         fig, ax = plt.subplots(figsize=(6, 6))
 
+        # everything else keeps its fixed colours
+        ax.scatter(ψr_2d[:, 0], ψr_2d[:, 1],
+                s=10, alpha=0.4, c="purple", marker="^",
+                label="ψ(s)_random")
+        ax.scatter(φr_2d[:, 0], φr_2d[:, 1],
+                s=10, alpha=0.4, c="pink", marker=".",
+                label="φ(s,a)_random")
+        ax.scatter(g2d[0, 0], g2d[0, 1],
+                marker="*", s=120, c="red", label="ψ(g)")
+        ax.scatter(
+            φp_rand_2d[:, 0], φp_rand_2d[:, 1],
+            c=t_idx, cmap=plt.cm.plasma, norm=norm,   # different palette
+            s=12, alpha=0.7, marker='s',
+            label="φ(s,a_rand) path states with random actions"
+        )
+
         # φ(s,a) and ψ(s) along the path → gradient colour
-        sc_phi = ax.scatter(φ_2d[:, 0], φ_2d[:, 1],
+        sc_phi = ax.scatter(φp_2d[:, 0], φp_2d[:, 1],
                             c=t_idx, cmap=cmap, norm=norm,
                             s=12, alpha=0.7, marker='o',
                             label="φ(s,a) path")
@@ -862,15 +933,7 @@ def run_pca_on_visited_cells(
                 s=12, alpha=0.7, marker='x',
                 label="ψ(s) path")
 
-        # everything else keeps its fixed colours
-        ax.scatter(ψr_2d[:, 0], ψr_2d[:, 1],
-                s=10, alpha=0.4, c="purple", marker="^",
-                label="ψ(s)_random")
-        # ax.scatter(φr_2d[:, 0], φr_2d[:, 1],
-        #         s=10, alpha=0.4, c="pink", marker=".",
-        #         label="φ(s,a)_random")
-        ax.scatter(g2d[0, 0], g2d[0, 1],
-                marker="*", s=120, c="red", label="ψ(g)")
+        
 
         # NEW – colour-bar to decode the trajectory timing
         cbar = fig.colorbar(sc_phi, ax=ax)

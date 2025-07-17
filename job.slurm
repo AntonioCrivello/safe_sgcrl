@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=contrastive_gpu     
-#SBATCH --array=0-7%8                          
-#SBATCH --cpus-per-task=4         
-#SBATCH --mem-per-cpu=16G               
+#SBATCH --array=0-0%1                          
+#SBATCH --cpus-per-task=1         
+#SBATCH --mem-per-cpu=8G               
 #SBATCH --gres=gpu:1         
-#SBATCH --time=10:00:00                                   
+#SBATCH --time=3:00:00                                   
 #SBATCH --mail-user=mb6458@princeton.edu
 #SBATCH --account=eysenbach
 
@@ -31,13 +31,9 @@ echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
 echo "CUDA_HOME: $CUDA_HOME"
 nvidia-smi
 
-#seeds=(800 801 802 803 804 805 806 807)
-seeds=(34340 34341 34342 34343 34344 34345 34346 34347 34348 34349 34350 34351 34352 34353 34354 34355)
-seeds=(808 809 810 811 812 813 814 815)
-seeds=(808 809 810 811 812 813 814 815)
-seeds=(0 1 2 3 4 5 6 7)
-seeds=(847 848 849 850 851 852 853 854)
-seeds=(924 925 926 927 928 929 930)
+#seeds=(316 317 318 319 320 321 322 323)
+seeds=(1)
+#seeds=(330 331 332 333 334 335 336 337 338 339 340 341 342 343 344 345)
 #seeds=(10008 10009 10010 10011 10012 10013 10014 10015)
 # seeds=(20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35)
 SEED=${seeds[$SLURM_ARRAY_TASK_ID]}
@@ -46,7 +42,7 @@ SEED=${seeds[$SLURM_ARRAY_TASK_ID]}
 #hidden_sizes=(256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256)
 #hidden_sizes=(256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256)
 #hidden_sizes=(256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256)
-hidden_sizes=(256 256 256 256 256 256)
+hidden_sizes=(256 256)
 hidden_flags=()
 for h in "${hidden_sizes[@]}"; do
   hidden_flags+=(--hidden_layer_sizes "$h")
@@ -65,13 +61,30 @@ done
     #    --use_residual_mlp \
     #    --goal_pos_frac 0.05 \
         # -goal_pos_actor_steps 8000000 \
-# 
+
+        ## top right --region_bounds=0,5:5,11 \
+        ## bottom left --region_bounds=5,0:11,5 \
+        #--region_bounds=5,3:9,8 \
+#       --region_bounds=0,8:3,11 \
+      # --nostop_grad_fixed \
+      # --region_bounds=7,0:11,4 \ narroew  line in fourrooms
+      ## x >> 9 - 10 , y >> 5, 7 >>>>  --region_bounds=9,5:10,7 \ --region_bounds=low_x,low_y:high_x,high_y \
+
+# python -u lp_contrastive.py \
+#       --time_delta_minutes 15 \
+#       --env point_Impossible \
+#       --nonegative_goal_repr \
+#       --seed "$SEED" \
+#       --Q_max \
+#       --region_bounds=4,2:6,4 \
+#       --num_steps 8000000 \
+#       "${hidden_flags[@]}" \
+
 
 python -u lp_contrastive.py \
-    -env point_Spiral11x11 \
-    --seed "$SEED" \
-    --num_steps 8000000 \
-    "${hidden_flags[@]}" \
-    --weight_reset_interval 1000 \
+      --time_delta_minutes 15 \
+      --env sawyer_bin \
+      --seed "$SEED" \
+      --num_steps 8000000 \
 
 exit 0  

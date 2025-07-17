@@ -28,7 +28,7 @@ SEEDS=(101 102 103 104 105 106 107)
 #SEEDS=(5)
 
 # List of checkpoints
-CKPTS=(25 30 35 40 45 50 55 60)
+CKPTS=(1 2 3 4 5 6 7 8 9 10)
 #CKPTS=(8 9)
 CKPT_ARGS="${CKPTS[@]}"  # Expand into --ckpts list
 

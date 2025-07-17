@@ -302,7 +302,8 @@ class ContrastiveLearner(acme.Learner):
         assert q_action.shape[2] == 2
         q_action = jnp.min(q_action, axis=-1)
 
-      actor_loss = -jnp.diag(q_action) # negative -(Q): maximize Q
+      actor_loss = -jnp.diag(q_action)# negative -(Q): maximize Q
+      #actor_loss = jnp.diag(q_action) # (Q): minimize Q
 
       # action entropy loss
       approx_entropy = -log_prob

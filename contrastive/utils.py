@@ -225,12 +225,12 @@ class InitiallyRandomActor(actors.GenericActor):
       # if (self._params[0]['mlp/~/linear_0']['b'] == 0).all():
     
     
-    params_root = self._params              # same as before
+    params_root = self._params[0]              # same as before
 
     if _first_linear0_bias_is_zero(params_root):
       # print("Using random actions because first linear_0 bias is zero.",
       #       flush=True)
-      shape = self._params['Normal/~/linear']['b'].shape
+      shape = self._params[0]['Normal/~/linear']['b'].shape
       #print("Action shape: {}".format(shape), flush=True)
       rng, self._state = jax.random.split(self._state)
       action = jax.random.uniform(key=rng, shape=shape,

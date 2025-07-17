@@ -17,10 +17,15 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib/nvidia"
 #devices=(0 1 2 3 4 5 6 7)   
 
 #seeds=(2 3 4 5) # List of seeds to run
-seeds=(900 901 902 903 904 905 906 907)
+seeds=(200 201 202 203 204 205 206 207)
+seeds=(308 309 310 311 312 313 314 315 316 317 318 319 320 321 322 323)
+#seeds=(228 229 230 231 232 233 234 235)
+#seeds=(330 331 332 333 334 335 336 337 338 339 340 341 342 343 344 345)
+#seeds=(924 925 926 927 928 929 930 931)
 ###### 0  0  1  1  0  0  0  0  0  1  0  0  0  0  0  0  0  1  0  1
 devices=(7)        # GPU index for each run
-
+#actor_sample
+#q_max
 for idx in "${!seeds[@]}"; do
   SEED=${seeds[$idx]}
   DEV=${devices[$idx]}
@@ -32,10 +37,10 @@ for idx in "${!seeds[@]}"; do
     --seed $SEED \
     --log_dir logs \
     --alg contrastive_cpc \
-    --ckpt_list  1 2 3 4 5 6 7 8 9 10 15 20 25 30 35 40 45 50 55 60 65 70 \
+    --ckpt_list 1 2 3 4 5 6 7 8 9 10 15 20 25 30\
     --NUM_AXES 2 \
     --NUM_EPISODES 5 \
     --plot_psi \
-    --action_mode "actor_sample"\
+    --action_mode "q_max"\
     > "similarity_seed${SEED}.log" 2>&1 &
 done

@@ -19,6 +19,8 @@ import launchpad as lp
 import numpy as np
 import os
 from new_point_env import PointEnvExtras   # the 20-dim env you just wrote
+from absl import flags
+import jax.numpy as jnp   # used later to build arrays
 
 FLAGS = flags.FLAGS
 
@@ -62,10 +64,26 @@ flags.DEFINE_float('goal_pos_frac', 0.05, 'fraction of fake goal positive sampli
 flags.DEFINE_integer('weight_reset_interval', 0, 'Interval for resetting weights, 0 means no reset')
 flags.DEFINE_bool('backward_loss', False, 'Whether to use backward loss')
 
+flags.DEFINE_string(
+    'region_bounds',
+    None,
+    'Axis-aligned box for masking, formatted '
+    '"x_lo,y_lo:x_hi,y_hi"  (no spaces). '
+    'Omit to disable masking.')
+flags.DEFINE_bool(
+    'stop_grad_fixed',
+    True,
+    'Freeze gradients flowing through the substituted goal representation.')
+
+flags.DEFINE_bool(
+    'negative_goal_repr',
+    True,
+    'Using negative goal representation in the designated area, ')
+
 
 # fixed goal coordinates for supported environments
 fixed_goal_dict={'point_Spiral11x11': [np.array([5,5], dtype=float), np.array([10,10], dtype=float)],
-                 'point_FourRooms': [np.array([0,0], dtype=float), np.array([10,8], dtype=float)], #[10,8] #[0,10] [5,10]
+                 'point_FourRooms': [np.array([0,0], dtype=float), np.array([10,8], dtype=float)], #[10,8] 
                  'point_Impossible' :  [np.array([9,0], dtype=float), np.array([7 , 9], dtype=float)], # hardest right before the final wall [7,9]
                  'point_Maze11x11' : [np.array([0,0], dtype=float), np.array([5,4], dtype=float)], # hardest [11,11] , [5,4] doable using 1024 network
                  'point_Wall11x11' : [np.array([2,0], dtype=float), np.array([0,0], dtype=float)], # hardest [2,0] [0,0] easier [2,8] [0,10]
@@ -224,6 +242,32 @@ def main(_):
   params['time_delta_minutes'] = FLAGS.time_delta_minutes
   params['weight_reset_interval'] = FLAGS.weight_reset_interval
   params['backward_loss'] = FLAGS.backward_loss
+  if FLAGS.region_bounds is None:
+    params['region_bounds'] = None
+  else:
+    try:
+        lower_str, upper_str = FLAGS.region_bounds.split(':')
+        lower = jnp.array(list(map(float, lower_str.split(','))),
+                          dtype=jnp.float32)
+        upper = jnp.array(list(map(float, upper_str.split(','))),
+                          dtype=jnp.float32)
+        params['region_bounds'] = (lower.tolist(), upper.tolist())
+    except Exception as e:
+        raise ValueError(
+            f"Bad --region_bounds '{FLAGS.region_bounds}'. "
+            "Use 'x_lo,y_lo:x_hi,y_hi' with no spaces."
+        ) from e
+  params['stop_grad_fixed'] = FLAGS.stop_grad_fixed
+  params['negative_goal_repr'] = FLAGS.negative_goal_repr
+  # ---- sanity-check ----------------------------------------------------
+  if params.get('region_bounds') is None:
+      print("[mask] region_bounds = None  → masking DISABLED")
+  else:
+      lo, hi = params['region_bounds']
+      print(f"[mask] region_bounds:"
+            f"  lower = {lo}   upper = {hi}   "
+            f"stop_grad_fixed = {params['stop_grad_fixed']}")
+# stop-grad flag
   
   if alg == 'contrastive_cpc':
     params['use_cpc'] = True
