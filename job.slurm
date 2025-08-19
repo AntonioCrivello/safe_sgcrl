@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=contrastive_gpu     
-#SBATCH --array=0-0%1                          
+#SBATCH --array=0-3%4                      
 #SBATCH --cpus-per-task=1         
 #SBATCH --mem-per-cpu=8G               
 #SBATCH --gres=gpu:1         
@@ -32,7 +32,8 @@ echo "CUDA_HOME: $CUDA_HOME"
 nvidia-smi
 
 #seeds=(316 317 318 319 320 321 322 323)
-seeds=(1)
+seeds=(2220 2221 2222 2223)
+# seeds=(4440 4441 4442 4443)
 #seeds=(330 331 332 333 334 335 336 337 338 339 340 341 342 343 344 345)
 #seeds=(10008 10009 10010 10011 10012 10013 10014 10015)
 # seeds=(20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35)
@@ -42,7 +43,7 @@ SEED=${seeds[$SLURM_ARRAY_TASK_ID]}
 #hidden_sizes=(256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256)
 #hidden_sizes=(256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256)
 #hidden_sizes=(256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256)
-hidden_sizes=(256 256)
+hidden_sizes=(256 256 256 256 256 256)
 hidden_flags=()
 for h in "${hidden_sizes[@]}"; do
   hidden_flags+=(--hidden_layer_sizes "$h")
@@ -83,8 +84,10 @@ done
 
 python -u lp_contrastive.py \
       --time_delta_minutes 15 \
-      --env sawyer_bin \
+      --env point_FourRooms\
       --seed "$SEED" \
       --num_steps 8000000 \
+      --region_bounds=5,0:11,5 \
+      "${hidden_flags[@]}" \
 
 exit 0  

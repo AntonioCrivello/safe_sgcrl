@@ -78,7 +78,8 @@ class DistributedContrastive(distributed_layout.DistributedLayout):
         contrastive_utils.SuccessObserver(),
         contrastive_utils.DistanceObserver(obs_dim=config.obs_dim,
                                            start_index=config.start_index,
-                                           end_index=config.end_index)]
+                                           end_index=config.end_index),
+        contrastive_utils.RegionVisitObserver(config.region_bounds, config.env_name, config.seed)]
     
     policy_net_factory = lambda n: networks.apply_policy_and_sample(
         n,

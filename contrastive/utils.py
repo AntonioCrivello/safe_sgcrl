@@ -19,6 +19,8 @@ import jax
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 import os
+import os, json, numpy as np
+from acme.utils import observers as observers_base  # same base as your SuccessObserver
 
 def obs_to_goal_1d(obs, start_index, end_index):
   assert len(obs.shape) == 1
@@ -61,6 +63,137 @@ class SuccessObserver(observers_base.EnvLoopObserver):
         'success': float(np.sum(self._rewards) >= 1),
         'success_1000': np.mean(self._success[-1000:]),
     }
+  
+
+
+
+
+class RegionVisitObserver(observers_base.EnvLoopObserver):
+  """
+  Counts how many steps per episode the (x, y) position (from the first 2 dims
+  of the observation) lies inside one or more rectangular regions. If
+  region_bounds is None, two default regions are tracked; otherwise, a single
+  provided region is tracked.
+
+  NEW: Instead of rewriting one big JSON, this saves only the newly finished
+  episodes to a new file each time, with the episode range in the filename.
+  """
+
+  def __init__(self,
+               region_bounds,          # None OR ((x0,y0), (x1,y1)) as lower/upper corners
+               env,
+               seed,
+               save_every=5000,
+               save_dir="experiments/safety_region_visits"):
+    # --- define regions ---
+    self.regions = []
+    if region_bounds is not None:
+      x_min, y_min = float(region_bounds[0][0]), float(region_bounds[0][1])
+      x_max, y_max = float(region_bounds[1][0]), float(region_bounds[1][1])
+      self.regions.append({"x": (x_min, x_max), "y": (y_min, y_max)})
+    else:
+      # DEFAULT: two regions (edit as needed)
+      self.regions.append({"x": (0.0, 5.0),  "y": (5.0, 11.0)})  # region 0
+      self.regions.append({"x": (5.0, 11.0), "y": (0.0, 5.0)})   # region 1
+
+    self.n_regions = len(self.regions)
+    desc = ", ".join(
+        [f"R{i}: x=[{r['x'][0]}, {r['x'][1]}], y=[{r['y'][0]}, {r['y'][1]}]"
+         for i, r in enumerate(self.regions)]
+    )
+    print(f"[RegionVisitObserver] Tracking {self.n_regions} region(s): {desc}", flush=True)
+
+    self.save_every = int(save_every)
+    print(f"env: {env}, seed: {seed}, save_every: {self.save_every}", flush=True)
+
+    # Root directory: experiments/safety_region_visits/<env>_<seed>/
+    self._save_root = os.path.join(save_dir, f"{env}_{seed}")
+    os.makedirs(self._save_root, exist_ok=True)
+
+    # episode bookkeeping
+    self._eps_seen = 0                                            # total finalized episodes so far
+    self._buffer_per_region = [[] for _ in range(self.n_regions)] # only keep the last chunk
+    self._in_ep = False
+    self._counts_cur = np.zeros(self.n_regions, dtype=int)        # per-episode counters
+
+  # -------- helpers --------
+  def _extract_xy(self, obs):
+    """Return (x, y) from the first two elements of the observation."""
+    if isinstance(obs, dict):
+      for k in ("observation", "obs", "state", "position"):
+        if k in obs:
+          obs = obs[k]
+          break
+    arr = np.asarray(obs).ravel()
+    if arr.size < 2:
+      raise ValueError("Observation must have at least 2 elements to extract (x, y).")
+    return float(arr[0]), float(arr[1])
+
+  @staticmethod
+  def _inside_rect(x, y, rx, ry):
+    """Inclusive rectangle test."""
+    return (rx[0] <= x <= rx[1]) and (ry[0] <= y <= ry[1])
+
+  def _save_buffer_block(self):
+    """Write the current buffered episodes to a new file and clear the buffer."""
+    block_len = len(self._buffer_per_region[0])
+    if block_len == 0:
+      return
+    end_ep = self._eps_seen - 1
+    start_ep = self._eps_seen - block_len
+    fname = f"region_visits_{start_ep:06d}-{end_ep:06d}.json"
+    fpath = os.path.join(self._save_root, fname)
+    os.makedirs(self._save_root, exist_ok=True)
+
+    data = {
+      "episodes": list(range(start_ep, end_ep + 1)),
+      "regions": [
+        {"x": list(self.regions[i]["x"]), "y": list(self.regions[i]["y"])}
+        for i in range(self.n_regions)
+      ],
+      # per-region lists for just this block:
+      "counts_per_region": {
+        f"region{i}": self._buffer_per_region[i] for i in range(self.n_regions)
+      }
+    }
+    tmp = fpath + ".tmp"
+    with open(tmp, "w") as f:
+      json.dump(data, f)
+    os.replace(tmp, fpath)
+    print(f"[RegionVisitObserver] Saved block {start_ep}-{end_ep} → {fpath}", flush=True)
+
+    # clear buffer to keep memory small
+    self._buffer_per_region = [[] for _ in range(self.n_regions)]
+
+  def _finalize_episode(self):
+    """Append current counts to the buffer and maybe save a block."""
+    for i in range(self.n_regions):
+      self._buffer_per_region[i].append(int(self._counts_cur[i]))
+    self._eps_seen += 1
+
+    # Save only when we've accumulated `save_every` episodes.
+    if (self._eps_seen % self.save_every) == 0:
+      self._save_buffer_block()
+
+  # -------- EnvLoopObserver API --------
+  def observe_first(self, env, timestep):
+    """Called at the beginning of an episode."""
+    if self._in_ep:
+      self._finalize_episode()
+    self._in_ep = True
+    self._counts_cur[:] = 0
+
+  def observe(self, env, timestep, action):
+    """Called on each step: count membership for each region separately."""
+    x, y = self._extract_xy(timestep.observation)
+    for i in range(self.n_regions):
+      rx, ry = self.regions[i]["x"], self.regions[i]["y"]
+      if self._inside_rect(x, y, rx, ry):
+        self._counts_cur[i] += 1
+
+  def get_metrics(self):
+    """(Keeping your original behavior: return empty dict here.)"""
+    return {}
 
 
 class DistanceObserver(observers_base.EnvLoopObserver):
