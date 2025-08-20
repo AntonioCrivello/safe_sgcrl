@@ -17,5 +17,6 @@ experiments/plots/
 experiments/psi_data/
 experiments/safety_region_visits/
 runs_final/
+*.pdf
 
 
