@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=1         
 #SBATCH --mem-per-cpu=8G               
 #SBATCH --gres=gpu:1         
-#SBATCH --time=3:00:00                                   
+#SBATCH --time=4:00:00                                   
 #SBATCH --mail-user=mb6458@princeton.edu
 #SBATCH --account=eysenbach
 
@@ -32,7 +32,9 @@ echo "CUDA_HOME: $CUDA_HOME"
 nvidia-smi
 
 #seeds=(316 317 318 319 320 321 322 323)
-seeds=(4440 4441 4442 4443 4444 4445 4446 4447)
+seeds=(5550 5551 5552 5553 5554 5555 5556 5557)
+seeds=(5550 5551 5552 5553 5554 5555 5556 5557)
+seeds=(4450 4451 4452 4453 4454 4455 4456 4457)
 # seeds=(4440 4441 4442 4443)
 #seeds=(330 331 332 333 334 335 336 337 338 339 340 341 342 343 344 345)
 #seeds=(10008 10009 10010 10011 10012 10013 10014 10015)
@@ -70,6 +72,8 @@ done
       # --nostop_grad_fixed \
       # --region_bounds=7,0:11,4 \ narroew  line in fourrooms
       ## x >> 9 - 10 , y >> 5, 7 >>>>  --region_bounds=9,5:10,7 \ --region_bounds=low_x,low_y:high_x,high_y \
+      #      --region_bounds=1,3:4,10 \
+            # --nonegative_goal_repr \
 
 
 
@@ -79,5 +83,7 @@ python -u lp_contrastive.py \
       --seed "$SEED" \
       --num_steps 8000000 \
       "${hidden_flags[@]}" \
+      --repr_norm \
+
 
 exit 0  

@@ -15,12 +15,12 @@ mpl.rcParams.update({
     "pdf.fonttype": 42,     # editable text in Illustrator/InkScape
     "ps.fonttype": 42,
     "font.family": "serif", # looks academic; switch to "DejaVu Serif"/"Times New Roman" if you prefer
-    "font.size": 14,        # base font size (bump to 16–18 if you like)
-    "axes.titlesize": 16,
-    "axes.labelsize": 14,
-    "xtick.labelsize": 12,
-    "ytick.labelsize": 12,
-    "legend.fontsize": 12,
+    "font.size": 18,        # base font size (bump to 16–18 if you like)
+    "axes.titlesize": 18,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+    "legend.fontsize": 18,
     "axes.linewidth": 1.2,  # thicker spines
     "lines.linewidth": 2.2, # thicker lines by default
     "grid.alpha": 0.25,
@@ -193,82 +193,116 @@ def main():
     ap = argparse.ArgumentParser(description="Plot average cumulative region visits over episodes across seeds.")
     ap.add_argument("--envs", type=str, default="point_FourRooms",
                     help="Comma-separated env names, e.g. 'Spiral11x11,Spiral15x15'")
-    ap.add_argument("--seeds", type=str, default="2220,2221,2222,2223,2224,2225,2226,2227",
-                    help="(Ignored for the custom two-plot comparison) Comma-separated seeds.")
+    # ap.add_argument("--seeds", type=str, default="2220,2221,2222,2223,2224,2225,2226,2227",
+    #                 help="(Ignored for the custom two-plot comparison) Comma-separated seeds.")
     ap.add_argument("--base_dir", type=str, default="experiments/safety_region_visits",
                     help="Base dir containing <env>_<seed>/ subfolders")
     ap.add_argument("--regions", type=str, default="",
                     help="(Ignored for the custom two-plot comparison) Comma-separated region indices.")
     ap.add_argument("--rolling", type=int, default=1000,
                     help="Rolling window on per-episode visits BEFORE accumulation (0 = off)")
-    ap.add_argument("--std_band", action="store_true", default=False,
+    ap.add_argument("--std_band", action="store_true", default=True,
                     help="Show ±1 std shading across seeds")
     args = ap.parse_args()
+    name = "safety"
+    name = "red"
 
     envs = parse_comma_separated(args.envs)
 
     # --- Seed groups as requested ---
-    seeds_safety_bottomleft = list(range(2220, 2228))   # "safety"
-    seeds_safety_topright   = list(range(3330, 3338))   # "safety"
-    seeds_nosafety_common   = list(range(4440, 4448))   # "no safety"
+    ## for the safety experiment
+    if name == "safety":
+        seeds_safety_bottomleft = list(range(2220, 2228))   # "safety"
+        # seeds_safety_topright   = list(range(3330, 3338))   # "safety"
+        seeds_nosafety_common   = list(range(4440, 4448))   # "no safety"
 
-    # --- Regions per plot (index-based) ---
-    region_bottom_left = [1]  # "second region"
-    region_top_right   = [0]  # "first region"
+        # --- Regions per plot (index-based) ---
+        region = [1]  # "second region"
+        labels = ["Safety", "No safety"]
+        title="Bottom-left room visitation"
+        clip = -1000
+        dim = 5
+
+    ## for the red hole experiment
+    if name == "red":
+        dim = 6
+   
+        seeds_safety_bottomleft = [s for s in range(5550, 5558) if s != 5555]
+
+        seeds_nosafety_common   = list(range(4450, 4458))   # normal
+        labels = ["Intervention", "Control"]
+        region=[]
+        title="Top-right room visitation"
+        clip = -1
+
 
     for env in envs:
         # ===== Plot 1: bottom-left room =====
         #fig1, ax1 = plt.subplots(figsize=(8.5, 5))
         # replace: fig, ax = plt.subplots(figsize=(8.5, 5))
-        COLW = 7                  # inches; set 7.0 for double-column width
-        GOLDEN = 0.64               # pleasant aspect
-        fig1, ax1 = plt.subplots(figsize=(COLW, COLW * GOLDEN))
-        ax1.set_xlim(0, 24000)
 
+        fig1, ax1 = plt.subplots(figsize=(dim,dim))
+        ax1.set_ylim(0, 0.37)
+        if name == "red":
+            ax1.set_ylim(-0.01, 0.4)
                 
         # Safety group on region 1
         ep_s1, mean_s1, std_s1, n_s1 = collect_env_seed_curves(
             base_dir=args.base_dir, env=env, seeds=seeds_safety_bottomleft,
-            regions=region_bottom_left, rolling=args.rolling, require_same_len=True
+            regions=region, rolling=args.rolling, require_same_len=True
         )
         if ep_s1 is not None:
             # denom = (ep_s1 - ep_s1[0] + 1) * 50.0  # num_episodes * 50
             mean_s1 = mean_s1 
             std_s1  = std_s1  
-            ax1.plot(ep_s1[:-1000], mean_s1[:-1000], linewidth=3, label="safety")
+            ax1.plot(ep_s1[:clip], mean_s1[:clip], linewidth=3, label=labels[0])
             if args.std_band and n_s1 > 1:
-                ax1.fill_between(ep_s1[:-1000], mean_s1[:-1000] - std_s1[:-1000], mean_s1[:-1000] + std_s1[:-1000], alpha=0.2)
+                ax1.fill_between(ep_s1[:clip], mean_s1[:clip] - std_s1[:clip], mean_s1[:clip] + std_s1[:clip], alpha=0.2)
 
 
         # No-safety group on region 1
         ep_ns1, mean_ns1, std_ns1, n_ns1 = collect_env_seed_curves(
             base_dir=args.base_dir, env=env, seeds=seeds_nosafety_common,
-            regions=region_bottom_left, rolling=args.rolling, require_same_len=True
+            regions=region, rolling=args.rolling, require_same_len=True
         )
         if ep_ns1 is not None:
             mean_ns1 = mean_ns1
             std_ns1  = std_ns1  
-            ax1.plot(ep_ns1[:-1000], mean_ns1[:-1000], linewidth=3, label="No safety")
+            ax1.plot(ep_ns1[:clip], mean_ns1[:clip], linewidth=3, label=labels[1])
             if args.std_band and n_ns1 > 1:
-                ax1.fill_between(ep_ns1[:-1000], mean_ns1[:-1000] - std_ns1[:-1000], mean_ns1[:-1000] + std_ns1[:-1000], alpha=0.2)
+                ax1.fill_between(ep_ns1[:clip], mean_ns1[:clip] - std_ns1[:clip], mean_ns1[:clip] + std_ns1[:clip], alpha=0.2)
 
         ax1.tick_params(direction="out", length=6, width=1.2, top=False, right=False)
         ax1.grid(True, which="major", linestyle=":", linewidth=0.8, alpha=0.35)
         ax1.set_axisbelow(True)  # grid behind data
         
 
-        ax1.set_xlabel("Episode")
+        ax1.set_xlabel("Trial")
         ax1.set_ylabel("Visitation Rate")
         
 
-        ax1.set_title("Bottom-left room visitation")
+        ax1.set_title(title)
         ax1.grid(True, alpha=0.3)
-        ax1.legend(loc="best", frameon=False, handlelength=2)
+        
+        if name == "red":
+            ax1.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.15),
+            ncol=2,
+            frameon=False
+            )
+            ax1.set_xlim(0, 20000)
+        else:
+            ax1.legend(loc="best", frameon=False, handlelength=2)
+            ax1.set_xlim(0, 24000)
+
 
         plt.tight_layout()
-        out1 = f"experiments/{env}_visiting_bottom_left_room.pdf"
+        out1 = f"experiments/{env}_visiting_bottom_left_room_{name}.pdf"
         plt.savefig(out1, dpi=600, bbox_inches="tight", pad_inches=0.02)
-        print(f"Saved plot to: {out1}")
+        out1 = f"experiments/{env}_visiting_bottom_left_room_{name}.png"
+        # plt.savefig(out1, dpi=600, bbox_inches="tight", pad_inches=0.02)
+        # print(f"Saved plot to: {out1}")
 
     
 

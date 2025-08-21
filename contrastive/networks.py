@@ -322,7 +322,7 @@ def make_networks(
         if config.negative_goal_repr:
           goal_fixed_repr = -1 *  g_encoder(goal_fixed) 
         else:
-          goal_fixed_repr = g_encoder(goal_fixed)            
+          goal_fixed_repr = 0.5 * g_encoder(goal_fixed)            
 
         g_repr = _replace_with_goal(mask, g_repr,
                                     goal_fixed_repr,

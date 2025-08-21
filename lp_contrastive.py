@@ -79,6 +79,10 @@ flags.DEFINE_bool(
     'negative_goal_repr',
     True,
     'Using negative goal representation in the designated area, ')
+flags.DEFINE_bool(
+    'repr_norm',
+     False,
+    'Using normalized represnattions ')
 
 
 # fixed goal coordinates for supported environments
@@ -242,6 +246,7 @@ def main(_):
   params['time_delta_minutes'] = FLAGS.time_delta_minutes
   params['weight_reset_interval'] = FLAGS.weight_reset_interval
   params['backward_loss'] = FLAGS.backward_loss
+  params['repr_norm'] = FLAGS.repr_norm
   if FLAGS.region_bounds is None:
     params['region_bounds'] = None
   else:

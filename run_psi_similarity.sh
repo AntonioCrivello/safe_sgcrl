@@ -19,7 +19,9 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib/nvidia"
 #seeds=(2 3 4 5) # List of seeds to run
 seeds=(200 201 202 203 204 205 206 207)
 seeds=(2220 2221 2223 2224 2225 2226 2227 3330 3331 3332 3333 3334 3335 3336 3337)
-seeds=(4440 4441 4442 4443 4444 4445 4446 4447)
+seeds=(5550 5551 5552 5553 5554 5555 5556 5557)
+seeds=(4450 4451 4452 4453 4454 4455 4456 4457)
+
 #seeds=(228 229 230 231 232 233 234 235)
 #seeds=(330 331 332 333 334 335 336 337 338 339 340 341 342 343 344 345)
 #seeds=(924 925 926 927 928 929 930 931)
@@ -38,7 +40,7 @@ for idx in "${!seeds[@]}"; do
     --seed $SEED \
     --log_dir logs \
     --alg contrastive_cpc \
-    --ckpt_list 2 3 4 5 6 7 8 9 10 15 20 25 30\
+    --ckpt_list 1 2 3\
     --NUM_AXES 2 \
     --NUM_EPISODES 5 \
     --plot_psi \

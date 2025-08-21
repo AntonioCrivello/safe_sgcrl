@@ -93,8 +93,9 @@ class RegionVisitObserver(observers_base.EnvLoopObserver):
       self.regions.append({"x": (x_min, x_max), "y": (y_min, y_max)})
     else:
       # DEFAULT: two regions (edit as needed)
-      self.regions.append({"x": (0.0, 5.0),  "y": (5.0, 11.0)})  # region 0
-      self.regions.append({"x": (5.0, 11.0), "y": (0.0, 5.0)})   # region 1
+      #self.regions.append({"x": (0.0, 5.0),  "y": (5.0, 11.0)})  # region 0
+      #self.regions.append({"x": (5.0, 11.0), "y": (0.0, 5.0)})   # region 1
+      self.regions.append({"x": (1.0, 4.0),  "y": (3.0, 10.0)})  # region 0
 
     self.n_regions = len(self.regions)
     desc = ", ".join(
