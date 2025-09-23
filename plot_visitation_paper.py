@@ -14,7 +14,6 @@ mpl.rcParams.update({
     "savefig.dpi": 600,     # export dpi for raster bits (PDF stays vector)
     "pdf.fonttype": 42,     # editable text in Illustrator/InkScape
     "ps.fonttype": 42,
-    "font.family": "serif", # looks academic; switch to "DejaVu Serif"/"Times New Roman" if you prefer
     "font.size": 18,        # base font size (bump to 16–18 if you like)
     "axes.titlesize": 18,
     "axes.labelsize": 18,
@@ -178,7 +177,7 @@ def collect_env_seed_curves(base_dir, env, seeds, regions=None, rolling=0, requi
         stack = np.stack([c[:L] for (_, c) in curves], axis=0)
 
     cum_mean = stack.mean(axis=0)
-    cum_std = stack.std(axis=0, ddof=0)
+    cum_std = stack.std(axis=0, ddof=0) / np.sqrt(stack.shape[0])
     return episodes_common, cum_mean, cum_std, stack.shape[0]
 
 def parse_comma_separated(arg):
@@ -204,7 +203,7 @@ def main():
     ap.add_argument("--std_band", action="store_true", default=True,
                     help="Show ±1 std shading across seeds")
     args = ap.parse_args()
-    name = "safety"
+    #name = "safety"
     name = "red"
 
     envs = parse_comma_separated(args.envs)
@@ -225,7 +224,7 @@ def main():
 
     ## for the red hole experiment
     if name == "red":
-        dim = 6
+        dim = 5
    
         seeds_safety_bottomleft = [s for s in range(5550, 5558) if s != 5555]
 
@@ -245,6 +244,7 @@ def main():
         ax1.set_ylim(0, 0.37)
         if name == "red":
             ax1.set_ylim(-0.01, 0.4)
+            
                 
         # Safety group on region 1
         ep_s1, mean_s1, std_s1, n_s1 = collect_env_seed_curves(
@@ -285,24 +285,29 @@ def main():
         ax1.grid(True, alpha=0.3)
         
         if name == "red":
-            ax1.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.15),
-            ncol=2,
-            frameon=False
-            )
+            ax1.legend(loc="upper right", frameon=False, handlelength=2)
             ax1.set_xlim(0, 20000)
+            # Set x-ticks at 0, 10000, 20000
+            plt.xticks([0, 7000, 15000])
+            ax1.set_yticks([0.0, 0.1, 0.2, 0.3])
+
+            # # Set y-ticks at 3 equally spaced values over the data range
+            # ymin, ymax = plt.ylim()                # current y-range
+            # plt.yticks([ymin, (ymin+ymax)/3, ymax])
         else:
             ax1.legend(loc="best", frameon=False, handlelength=2)
             ax1.set_xlim(0, 24000)
+
+
+        
 
 
         plt.tight_layout()
         out1 = f"experiments/{env}_visiting_bottom_left_room_{name}.pdf"
         plt.savefig(out1, dpi=600, bbox_inches="tight", pad_inches=0.02)
         out1 = f"experiments/{env}_visiting_bottom_left_room_{name}.png"
-        # plt.savefig(out1, dpi=600, bbox_inches="tight", pad_inches=0.02)
-        # print(f"Saved plot to: {out1}")
+        plt.savefig(out1, dpi=600, bbox_inches="tight", pad_inches=0.02)
+        print(f"Saved plot to: {out1}")
 
     
 
