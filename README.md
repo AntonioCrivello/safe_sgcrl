@@ -2,8 +2,7 @@
 
 This repository contains the code for the paper  
 **_“Demystifying the Mechanisms Behind Emergent Exploration in Goal-conditioned RL.”_**
-
-The paper investigates the **exploration dynamics of SGCRL (Singl-Goal Contrastive Reinforcement Learning)** through a combination of **controlled experiments** and **theoretical analysis**.
+This paper investigates the **exploration dynamics of SGCRL (Singl-Goal Contrastive Reinforcement Learning)** through a combination of **controlled experiments** and **theoretical analysis**.
 
 ---
 
