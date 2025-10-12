@@ -23,6 +23,7 @@ for idx in "${!seeds[@]}"; do
     nohup python -u lp_contrastive.py \
       --env point_FourRooms \
       --seed "$SEED" \
+      --num_steps 500000 \
       --region_bounds=0,5:5,11 \
       > "$LOG" 2>&1 &   # redirection now belongs to the nohup command
 done
