@@ -2,7 +2,7 @@
 
 This repository contains the code for the paper  
 **_“Demystifying the Mechanisms Behind Emergent Exploration in Goal-conditioned RL.”_**
-This paper investigates the **exploration dynamics of SGCRL (Singl-Goal Contrastive Reinforcement Learning)** through a combination of **controlled experiments** and **theoretical analysis**.
+This paper investigates the **exploration dynamics of SGCRL (Singl-Goal Contrastive Reinforcement Learning)** through a combination of **controlled experiments** and **theoretical analysis**. Refer to the [project website](https://mahsa-bastankhah.github.io/demystifying-single-goal-exploration/) for more information.
 
 ---
 
@@ -17,7 +17,7 @@ This codebase includes two main components:
 
 ### **2. Continuous Environment Implementation**
 - Based on the original [SGCRL repository](https://github.com/graliuce/sgcrl/tree/main).  
-- Extends it with functionality for defining and enforcing **safety regions** — parts of the environment that the agent should avoid during training or evaluation.
+- Extends it with functionality for defining and enforcing **safety regions** by manipulating the contrastive representations — safety regions are parts of the environment that the agent should avoid during training and evaluation.
 
 
 
@@ -93,7 +93,7 @@ python -u lp_contrastive.py \
 This will run the safety experiment, where the agent learns to avoid the top-right corner of the FourRooms environment.
 During training, the visitation data will be saved in the folder:
 
-./safety_region_visits_data/
+```./safety_region_visits_data/```
 
 
 Refer to the paper for detailed visualizations and analysis of the agent's behavior.
