@@ -74,17 +74,14 @@ class RegionVisitObserver(observers_base.EnvLoopObserver):
   of the observation) lies inside one or more rectangular regions. If
   region_bounds is None, two default regions are tracked; otherwise, a single
   provided region is tracked.
-
-  NEW: Instead of rewriting one big JSON, this saves only the newly finished
-  episodes to a new file each time, with the episode range in the filename.
   """
 
   def __init__(self,
                region_bounds,          # None OR ((x0,y0), (x1,y1)) as lower/upper corners
                env,
                seed,
-               save_every=5000,
-               save_dir="experiments/safety_region_visits"):
+               save_every=1000,
+               save_dir="safety_region_visits_data"):
     # --- define regions ---
     self.regions = []
     if region_bounds is not None:
@@ -92,9 +89,6 @@ class RegionVisitObserver(observers_base.EnvLoopObserver):
       x_max, y_max = float(region_bounds[1][0]), float(region_bounds[1][1])
       self.regions.append({"x": (x_min, x_max), "y": (y_min, y_max)})
     else:
-      # DEFAULT: two regions (edit as needed)
-      #self.regions.append({"x": (0.0, 5.0),  "y": (5.0, 11.0)})  # region 0
-      #self.regions.append({"x": (5.0, 11.0), "y": (0.0, 5.0)})   # region 1
       self.regions.append({"x": (1.0, 4.0),  "y": (3.0, 10.0)})  # region 0
 
     self.n_regions = len(self.regions)
@@ -107,6 +101,9 @@ class RegionVisitObserver(observers_base.EnvLoopObserver):
     self.save_every = int(save_every)
     print(f"env: {env}, seed: {seed}, save_every: {self.save_every}", flush=True)
 
+    # Ensure the base save directory exists first
+    os.makedirs(save_dir, exist_ok=True)
+    
     # Root directory: experiments/safety_region_visits/<env>_<seed>/
     self._save_root = os.path.join(save_dir, f"{env}_{seed}")
     os.makedirs(self._save_root, exist_ok=True)
@@ -322,22 +319,6 @@ def make_environment(env_name, start_index, end_index,
   env = ObservationFilterWrapper(env, indices)
   return env, obs_dim
 
-
-# class InitiallyRandomActor(actors.GenericActor):
-#   """Actor that takes actions uniformly at random until the actor is updated.
-#   """
-
-#   def select_action(self,
-#                     observation):
-#     if (self._params['mlp/~/linear_0']['b'] == 0).all():
-#       shape = self._params['Normal/~/linear']['b'].shape
-#       rng, self._state = jax.random.split(self._state)
-#       action = jax.random.uniform(key=rng, shape=shape,
-#                                   minval=-1.0, maxval=1.0)
-#     else:
-#       action, self._state = self._policy(self._params, observation,
-#                                          self._state)
-#     return utils.to_numpy(action)
 
 
 class InitiallyRandomActor(actors.GenericActor):

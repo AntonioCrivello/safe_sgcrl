@@ -56,10 +56,7 @@ class ResidualMLP(hk.Module):
         for i, w in enumerate(self._widths[:-1]):
             # Linear layer
             h = hk.Linear(w, name=f"linear_{i}", w_init=self._w_init)(h)
-            # print(f"linear_{i}")
-            # Optional LayerNorm
             if self._use_ln:
-                # print("Applying LayerNorm at layer", i, flush=True)
                 h = hk.LayerNorm(axis=-1,
                                  create_scale=True,
                                  create_offset=True,
@@ -99,20 +96,6 @@ class ContrastiveNetworks:
   sample_eval: Optional[networks_lib.SampleFn] = None
 
 
-# def apply_policy_and_sample(
-#     networks,
-#     eval_mode = False):
-#   """Returns a function that computes actions."""
-#   sample_fn = networks.sample if not eval_mode else networks.sample_eval
-#   if not sample_fn:
-#     raise ValueError('sample function is not provided')
-
-#   def apply_and_sample(params, key, obs):
-#     return sample_fn(networks.policy_network.apply(params, obs), key)
-#   return apply_and_sample
-
-
-
 def apply_policy_and_sample(
     networks,
     Q_max = False,
@@ -126,10 +109,6 @@ def apply_policy_and_sample(
         raise ValueError('sample function is not provided')
 
       def apply_and_sample(params, key, obs):
-        # print("param tree structure: {}", jax.tree_util.tree_structure(params), flush=True)
-        # print("top-level keys: {}", list(params.keys()), flush= True)
-        # policy_params = params if isinstance(params, jax.Array) else params['policy_network']
-        # q_params = params if isinstance(params, jax.Array) else params['critic']
         policy_params, q_params = params 
         
         return sample_fn(networks.policy_network.apply(policy_params, obs), key)
@@ -138,10 +117,6 @@ def apply_policy_and_sample(
   else:
       def select_action(params, key, obs):
           print("Using Q_max to select actions", flush = True)
-          # print("param tree structure: {}", jax.tree_util.tree_structure(params), flush=True)
-          # print("top-level keys: {}", list(params.keys()), flush= True)
-          # policy_params = params if isinstance(params, jax.Array) else params['policy_network']
-          # q_params = params if isinstance(params, jax.Array) else params['critic']
           policy_params, q_params = params      # unpack
           return maximize_q_action(networks.q_network, q_params, obs)
       return select_action
@@ -150,55 +125,34 @@ def apply_policy_and_sample(
     
 
 
-
+## if Q_max is True, use the critic to select the action that maximizes Q instead of using the actor
 def maximize_q_action(q_network, q_params, obs, grid_size=20, epsilon = 0.01):
     # 1) Build candidate actions
-    # 1) Infer dimensions
     obs = obs.reshape(-1)  # flatten in case it's shape (1, obs_dim)
     obs_dim = obs.shape[0] // 2
 
     input_dim = q_params['sa_encoder/~/linear_0']['w'].shape[0]
     action_dim = input_dim - obs_dim
-    #debug.print("obs_dim: {}, action_dim: {}", obs_dim, action_dim)
+
 
     grid = jnp.linspace(-1.0, 1.0, num=grid_size)        # 10 points per axis
     action_grid = jnp.array(list(itertools.product(grid, repeat=action_dim)))
-    #    → (1000, 3)
-
-    # 2) Tile obs into shape (1000, obs_dim*2)
-    #    If obs is (6,) or (1,6), this yields (1000,6).
+    ## 2) Repeat observation to match action grid size
     repeated_obs = jnp.tile(obs.reshape(-1), (action_grid.shape[0], 1))
 
-    # —— Debug prints ——
-    # debug.print("obs shape:         ", obs.shape)
-    # debug.print("repeated_obs shape:", repeated_obs.shape)
-    # debug.print("action_grid shape: ", action_grid.shape)
 
     # 3) Call the critic: returns (critic_val, sa_repr, g_repr)
     critic_val, sa_repr, g_repr = q_network.apply(q_params,
                                                   repeated_obs,
                                                   action_grid)
-    # Now sa_repr, g_repr are both (1000, repr_dim)
 
     # 4) Compute per-action Q: elementwise dot → (1000,)
     q_values = jnp.sum(sa_repr * g_repr, axis=-1)
-    #debug.print("q_values shape:    ", q_values.shape)
+
 
     # 5) Pick the best index (a JAX scalar) and slice
     best_idx    = jnp.argmax(q_values)          # shape=(), dtype=int32
     best_action = action_grid[best_idx]         # shape=(3,)
-    #debug.print("best_idx:", best_idx, "→ best_action shape:", best_action.shape)
-    # Add small Gaussian noise to the best action
-    # key = jax.random.PRNGKey(0)  # Initialize once
-    # key, noise_key, eps_key = jax.random.split(key, 3)
-
-    # rand_idx = jax.random.randint(jax.random.PRNGKey(0), shape=(), minval=0, maxval=action_grid.shape[0])
-    # random_action = action_grid[rand_idx]
-
-    # # 8) Epsilon-greedy selection
-    # choose_random = jax.random.uniform(eps_key) < epsilon
-    # selected_action = jax.lax.cond(choose_random, lambda: random_action, lambda: best_action)
-
 
     return jnp.expand_dims(best_action, axis=0)
 
@@ -262,7 +216,6 @@ def make_networks(
         skip_every=4,              # <- every 2 layers get a skip; tune as you like
         activation=jax.nn.swish,
         use_layer_norm=True,
-        #w_init=hk.initializers.VarianceScaling(1.0, "fan_avg", "uniform"),
         name='sa_encoder')
       sa_repr = sa_encoder(jnp.concatenate([state, action], axis=-1))
 
@@ -271,12 +224,11 @@ def make_networks(
           skip_every=4,
           activation=jax.nn.swish,
           use_layer_norm=True,
-          #w_init=hk.initializers.VarianceScaling(1.0, "fan_avg", "uniform"),
           name='g_encoder')
       g_repr = g_encoder(goal)
 
 
-    # ❶ Add these two helpers – place them near _repr_fn for clarity
+
     def _in_region(x: jnp.ndarray, lower: jnp.ndarray, upper: jnp.ndarray) -> jnp.ndarray:
         """Returns a (batch,) boolean mask: True if each state lies inside [lower, upper] box."""
         # jax.debug.print("x {x}", x=x)
@@ -292,13 +244,6 @@ def make_networks(
 
         out = jnp.where(mask[:, None], goal_repr, g_repr)
 
-    
-        # jax.debug.print(
-        #     "⏩ replace_with_goal: masked {m}/{b}  stop_grad={sg}, goal {goal}",
-        #     m=mask.sum(), b=mask.size, sg=stop_grad_to_goal, goal=config.fixed_goal)
-        # small peek at first 3 dims of the first vector
-
-      # -----------------------------------------------------------------
         return out
 
 
@@ -308,7 +253,7 @@ def make_networks(
         # NEW: ensure they are JAX arrays (works for list / tuple / array)
         lower = jnp.asarray(lower, dtype=state.dtype)
         upper = jnp.asarray(upper, dtype=state.dtype)
-        #jax.debug.print("region_bounds {lower} {upper}", lower=lower, upper=upper)
+
         mask = _in_region(goal, lower, upper)     # (batch,)
 
         # ▸ 1.  Convert whatever the user put in `config.fixed_goal`
@@ -372,7 +317,6 @@ def make_networks(
           activation=jax.nn.swish,
           use_layer_norm=True,
           activate_final=True,
-          #w_init=hk.initializers.VarianceScaling(1.0, "fan_in", "uniform"),
           name="policy_trunk",
       )
       seq_layers = [trunk]
@@ -391,13 +335,7 @@ def make_networks(
             activate_final=True),
         NormalTanhDistribution(num_dimensions, min_scale=actor_min_std),
       ])
-#  if config.use_residual_mlp else hk.nets.MLP(  # fallback to plain MLP
-#         list(hidden_layer_sizes),
-#         w_init=hk.initializers.VarianceScaling(1.0, "fan_in", "uniform"),
-#         activation=jax.nn.relu,
-#         activate_final=True,
-#         name="policy_trunk",
-#     )
+
    
     return network(obs)
 

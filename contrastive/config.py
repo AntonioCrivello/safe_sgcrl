@@ -80,8 +80,7 @@ class ContrastiveConfig:
 
   mid_goal_selector_actor = False
   hidden_layer_sizes: Tuple[int, Ellipsis] = (256, 256)
-  #hidden_layer_sizes: Tuple[int, Ellipsis] = (256, 256)
-  #hidden_layer_sizes: Tuple[int, Ellipsis] = (1024, 1024)
+
 
 
   init_weight: Optional[str] = None
@@ -104,15 +103,17 @@ class ContrastiveConfig:
   negative_goal_repr : Optional[bool] = True  # Whether to use negative goal representation in the designated area
 
   stop_grad_fixed: Optional[bool] = True                     # freeze grads on fixed goal
-    ## low x y
-    ## high x y
+
+  region_bounds: Tuple[jnp.ndarray, jnp.ndarray] = None
+  ## Example usage:
+  ## low x y
+  ## high x y
   # region_bounds: Tuple[jnp.ndarray, jnp.ndarray] = field(
   #     default_factory=lambda: (
   #         jnp.array([5, 0]),   # lower corner
   #         jnp.array([11,  5])    # upper corner
   #     )
   # )
-  region_bounds: Tuple[jnp.ndarray, jnp.ndarray] = None
 
 def target_entropy_from_env_spec(
     spec,

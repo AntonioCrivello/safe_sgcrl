@@ -1,4 +1,26 @@
-# Single-goal Contrastive RL (SGCRL)
+# Demystifying the Mechanisms Behind Emergent Exploration in Goal-conditioned RL
+
+This repository contains the code for the paper  
+**_“Demystifying the Mechanisms Behind Emergent Exploration in Goal-conditioned RL.”_**
+
+The paper investigates the **exploration dynamics of SGCRL (Singl-Goal Contrastive Reinforcement Learning)** through a combination of **controlled experiments** and **theoretical analysis**.
+
+---
+
+## Overview
+
+This codebase includes two main components:
+
+### **1. Tabular SGCRL Implementation**
+- Implements SGCRL in a **tabular (non-neural)** setting.  
+- Enables studying the exploration behavior of SGCRL **without neural network function approximation**.  
+- Useful for running controlled experiments that isolate algorithmic dynamics.
+
+### **2. Continuous Environment Implementation**
+- Based on the original [SGCRL repository](https://github.com/graliuce/sgcrl/tree/main).  
+- Extends it with functionality for defining and enforcing **safety regions** — parts of the environment that the agent should avoid during training or evaluation.
+
+
 
 ## Set up conda environment
 **Set up conda:**
@@ -59,6 +81,23 @@ To run code, use
 python lp_contrastive.py
 ```
 
+## Safety Experiment
+To run the safety experiment, execute the following command:
+
+```bash
+python -u lp_contrastive.py \
+    --env point_FourRooms \
+    --region_bounds=0,5:5,11
+```
+
+
+This will run the safety experiment, where the agent learns to avoid the top-right corner of the FourRooms environment.
+During training, the visitation data will be saved in the folder:
+
+./safety_region_visits_data/
+
+
+Refer to the paper for detailed visualizations and analysis of the agent's behavior.
 
 ## Useful flags
 - `--env='{ENV_NAME}'`: Specifies the environment. Default environment is 'sawyer_bin'. Currently supported environments include 'sawyer_bin', 'sawyer_box', 'sawyer_peg', 'point_Spiral11x11'.
@@ -67,3 +106,5 @@ python lp_contrastive.py
 - `--sample_goals`: Turning on this flag will make the agent collect data conditioned on goals uniformly sampled according to the environment.
 (This behavior corresponds to that of the original Contrastive RL algorithm ([Eysenbach et. al, 2022](https://proceedings.neurips.cc/paper_files/paper/2022/hash/e7663e974c4ee7a2b475a4775201ce1f-Abstract-Conference.html)). 
 - `--add_uid`: Randomly generates unique uid and saves checkpoints and logs inside of a directory with that uid as the name. 
+
+

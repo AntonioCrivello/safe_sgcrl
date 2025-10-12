@@ -159,11 +159,6 @@ class ContrastiveLearner(acme.Learner):
         next_v = jnp.min(next_q, axis=-1)
         next_v = jax.lax.stop_gradient(next_v)
         next_v = jnp.diag(next_v)
-        # diag(logits) are predictions for future states.
-        # diag(next_q) are predictions for random states, which correspond to
-        # the predictions logits[range(B), goal_indices].
-        # So, the only thing that's meaningful for next_q is the diagonal. Off
-        # diagonal entries are meaningless and shouldn't be used.
         w = next_v / (1 - next_v)
         w_clipping = 20.0
         w = jnp.clip(w, 0, w_clipping)
@@ -338,9 +333,6 @@ class ContrastiveLearner(acme.Learner):
       else:
         alpha = config.entropy_coefficient
 
-      # (critic_loss, critic_metrics), critic_grads = critic_grad(
-      #     state.q_params, state.policy_params, state.target_q_params,
-      #     transitions, key_critic)
       (critic_loss, critic_metrics), critic_grads = critic_grad(
           state.q_params, state.policy_params, state.target_q_params,
           transitions, key_critic, use_goal_neg=use_goal_neg)
@@ -523,15 +515,6 @@ class ContrastiveLearner(acme.Learner):
 
         fixed_goal = jnp.asarray(self.config.fixed_goal, dtype=obs.dtype)
 
-        # ---- DEBUG PRINT: Before changing anything
-        # idx0 = idx[0]
-        # before_obs = obs[idx0]
-        # before_action = actions[idx0]
-        # print("▶ Before update:")
-        # print("  obs[idx0]:", np.array(before_obs))
-        # print("  state    :", np.array(before_obs[:obs_dim]))
-        # print("  goal     :", np.array(before_obs[obs_dim:2*obs_dim]))
-        # print("  action   :", np.array(before_action))
 
         # Set goal part
         obs = obs.at[idx, obs_dim:2*obs_dim].set(
@@ -545,15 +528,6 @@ class ContrastiveLearner(acme.Learner):
 
         # Set the actions directly in transitions.action
         actions = actions.at[idx].set(random_actions)
-
-        # ---- DEBUG PRINT: After update
-        # after_obs = obs[idx0]
-        # after_action = actions[idx0]
-        # print("▶ After update:")
-        # print("  obs[idx0]:", np.array(after_obs))
-        # print("  state    :", np.array(after_obs[:obs_dim]))
-        # print("  goal     :", np.array(after_obs[obs_dim:2*obs_dim]))
-        # print("  action   :", np.array(after_action))
 
         # Replace transitions
         transitions = transitions._replace(

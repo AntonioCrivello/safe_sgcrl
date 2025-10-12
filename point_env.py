@@ -164,7 +164,7 @@ class PointEnv(gym.Env):
         self.state = self._sample_empty_state()
     if random:
         # print("initial state" , self.state)
-        max_shift = 0.0  # Max amount to move in any direction
+        max_shift = 0.1  # Max amount to move in any direction
         for _ in range(100):  # Try multiple random moves in case some are blocked
             shift = np.random.uniform(low=-max_shift, high=max_shift, size=self.state.shape)
             new_state = self.state + shift
