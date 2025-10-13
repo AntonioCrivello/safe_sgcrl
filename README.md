@@ -14,6 +14,7 @@ This codebase includes two main components:
 - Implements SGCRL in a **tabular (non-neural)** setting.  
 - Enables studying the exploration behavior of SGCRL **without neural network function approximation**.  
 - Useful for running controlled experiments that isolate algorithmic dynamics.
+- See tabular_maze.ipynb and tabular_hanoi.ipynb to run tabular SGCRL in a FourRooms maze and Towers of Hanoi environment.
 
 ### **2. Continuous Environment Implementation**
 - Based on the original [SGCRL repository](https://github.com/graliuce/sgcrl/tree/main).  
