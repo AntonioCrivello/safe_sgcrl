@@ -2,7 +2,7 @@
 r"""Example running contrastive RL in JAX.
 
 Run using multi-threading
-  python lp_contrastive.py --lp_launch_type=local_mt
+    python lp_contrastive.py --lp_launch_type=local_mt
 
 
 """
@@ -83,10 +83,18 @@ flags.DEFINE_bool(
      False,
     'Using normalized represnattions ')
 
+# Safety experiment
+flags.DEFINE_bool(
+    'use_absorbing_failure',
+    False,
+    'Use absorbing failure states in the environment instead of ' \
+    '"representation negation for safety."'
+)
+
 
 # fixed goal coordinates for supported environments
 fixed_goal_dict={'point_Spiral11x11': [np.array([5,5], dtype=float), np.array([10,10], dtype=float)],
-                 'point_FourRooms': [np.array([0,0], dtype=float), np.array([10,8], dtype=float)], #[10,8] 
+                 'point_FourRooms': [np.array([0,0], dtype=float), np.array([10,8], dtype=float)], #[10,8]
                  'point_Impossible' :  [np.array([9,0], dtype=float), np.array([7 , 9], dtype=float)], # hardest right before the final wall [7,9]
                  'point_Maze11x11' : [np.array([0,0], dtype=float), np.array([5,4], dtype=float)], # hardest [11,11] , [5,4] doable using 1024 network
                  'point_Wall11x11' : [np.array([2,0], dtype=float), np.array([0,0], dtype=float)], # hardest [2,0] [0,0] easier [2,8] [0,10]
@@ -97,222 +105,234 @@ fixed_goal_dict={'point_Spiral11x11': [np.array([5,5], dtype=float), np.array([1
                       'sawyer_peg': np.array([-0.3, 0.6, 0.0])}
 
 @functools.lru_cache
-def get_env(env_name, start_index, end_index, seed, fix_goals = False, fix_goals_actor = False, use_naive_sampling=False, clock_period=None):
-  if fix_goals:
-    fixed_start_end = fixed_goal_dict[env_name]
-  else:
-    fixed_start_end = None
-  
-  if FLAGS.fixed_goal:
-    try:
-        # Parse string input like "0.1,0.2,0.3"
-        goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
-        fixed_start_end[1] = goal_coords
-        print(f"Overriding fixed goal with custom input: {fixed_start_end}")
-    except Exception as e:
-        raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
-    
-  return contrastive_utils.make_environment(env_name, start_index, end_index, seed=seed, fixed_start_end = fixed_start_end, extra_dim=FLAGS.extra_dim)
+def get_env(env_name, start_index, end_index, seed, fix_goals=False, fix_goals_actor=False, use_naive_sampling=False, clock_period=None):
+    if fix_goals:
+        fixed_start_end = fixed_goal_dict[env_name]
+    else:
+        fixed_start_end = None
+
+    if FLAGS.fixed_goal:
+        try:
+            # Parse string input like "0.1,0.2,0.3"
+            goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
+            fixed_start_end[1] = goal_coords
+            print(f"Overriding fixed goal with custom input: {fixed_start_end}")
+        except Exception as e:
+            raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
+
+    return contrastive_utils.make_environment(env_name, start_index, end_index, seed=seed, fixed_start_end=fixed_start_end, extra_dim=FLAGS.extra_dim)
 
 
 def get_program(params):
-  """Constructs the program."""
+    """Constructs the program."""
 
-  env_name = params['env_name']
-  seed = params['seed']
+    env_name = params['env_name']
+    seed = params['seed']
 
-  config = contrastive.ContrastiveConfig(**params)
-  
-  fix_goals = params['fix_goals']
-  print('Using fixed goals: {}...'.format(fix_goals))
+    config = contrastive.ContrastiveConfig(**params)
 
-  if fix_goals:
-    fixed_start_end = fixed_goal_dict[env_name]
-  else:
-    fixed_start_end = None
+    fix_goals = params['fix_goals']
+    print('Using fixed goals: {}...'.format(fix_goals))
 
-
-  if FLAGS.fixed_goal:
-    try:
-        # Parse string input like "0.1,0.2,0.3"
-        goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
-        fixed_start_end[1] = goal_coords
-        print(f"Overriding fixed goal with custom input: {fixed_start_end}")
-    except Exception as e:
-        raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
+    if fix_goals:
+        fixed_start_end = fixed_goal_dict[env_name]
+    else:
+        fixed_start_end = None
 
 
-  print('Using fixed start and end: {}...'.format(fixed_start_end))
-    
-  env_factory = lambda seed: contrastive_utils.make_environment(  # pylint: disable=g-long-lambda
-      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_start_end, extra_dim=FLAGS.extra_dim)
+    if FLAGS.fixed_goal:
+        try:
+            # Parse string input like "0.1,0.2,0.3"
+            goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
+            fixed_start_end[1] = goal_coords
+            print(f"Overriding fixed goal with custom input: {fixed_start_end}")
+        except Exception as e:
+            raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
 
-  env_factory_no_extra = lambda seed: env_factory(seed)[0]  # Remove obs_dim.
-    
-  environment, obs_dim = get_env(env_name, config.start_index,
-                                 config.end_index, seed, fix_goals = fix_goals)
+    # Add absorbing region boundaries if defined
+    absorbing_bounds = config.region_bounds if config.use_absorbing_failure else None
 
-  assert (environment.action_spec().minimum == -1).all()
-  assert (environment.action_spec().maximum == 1).all()
-  config.obs_dim = obs_dim
-  config.max_episode_steps = getattr(environment, '_step_limit') + 1
-  network_factory = functools.partial(
-      contrastive.make_networks, obs_dim=obs_dim, repr_dim=config.repr_dim,
-      repr_norm=config.repr_norm, twin_q=config.twin_q,
-      use_image_obs=config.use_image_obs,
-      hidden_layer_sizes=config.hidden_layer_sizes, config=config)
-    
-  env_factory_fixed_goals = lambda seed: contrastive_utils.make_environment(  # pylint: disable=g-long-lambda
-      env_name, config.start_index, config.end_index, seed, fixed_start_end = fixed_goal_dict[env_name], extra_dim=FLAGS.extra_dim)
-  env_factory_no_extra_fixed_goals = lambda seed: env_factory_fixed_goals(seed)[0]  # Remove obs_dim.
-    
-  agent = contrastive.DistributedContrastive(
-      seed=seed,
-      environment_factory=env_factory_no_extra,
-      environment_factory_fixed_goals=env_factory_no_extra_fixed_goals,
-      network_factory=network_factory,
-      config=config,
-      num_actors=config.num_actors,
-      log_to_bigtable=True,
-      max_number_of_steps=config.max_number_of_steps)
-  return agent.build()
+    print('Using fixed start and end: {}...'.format(fixed_start_end))
+
+    env_factory = lambda seed: contrastive_utils.make_environment(
+        env_name, config.start_index, config.end_index, seed,
+        fixed_start_end=fixed_start_end,
+        region_bounds=absorbing_bounds,
+        extra_dim=FLAGS.extra_dim)
+
+    env_factory_no_extra = lambda seed: env_factory(seed)[0]  # Remove obs_dim.
+
+    environment, obs_dim = get_env(env_name, config.start_index,
+                                   config.end_index, seed, fix_goals=fix_goals)
+
+    assert (environment.action_spec().minimum == -1).all()
+    assert (environment.action_spec().maximum == 1).all()
+    config.obs_dim = obs_dim
+    config.max_episode_steps = getattr(environment, '_step_limit') + 1
+    network_factory = functools.partial(
+        contrastive.make_networks, obs_dim=obs_dim, repr_dim=config.repr_dim,
+        repr_norm=config.repr_norm, twin_q=config.twin_q,
+        use_image_obs=config.use_image_obs,
+        hidden_layer_sizes=config.hidden_layer_sizes, config=config)
+
+    env_factory_fixed_goals = lambda seed: contrastive_utils.make_environment(
+        env_name, config.start_index, config.end_index, seed,
+        fixed_start_end=fixed_goal_dict[env_name],
+        region_bounds=absorbing_bounds,
+        extra_dim=FLAGS.extra_dim)
+    env_factory_no_extra_fixed_goals = lambda seed: env_factory_fixed_goals(seed)[0]  # Remove obs_dim.
+
+    agent = contrastive.DistributedContrastive(
+        seed=seed,
+        environment_factory=env_factory_no_extra,
+        environment_factory_fixed_goals=env_factory_no_extra_fixed_goals,
+        network_factory=network_factory,
+        config=config,
+        num_actors=config.num_actors,
+        log_to_bigtable=True,
+        max_number_of_steps=config.max_number_of_steps)
+    return agent.build()
 
 
 def main(_):
-  # Create experiment description.
+    # Create experiment description.
 
-  # 1. Select an environment.
-  # Supported environments:
-  #   Metaworld: sawyer_{bin,box,peg}
-  #   2D nav: point_{Spiral11x11}
-  env_name = FLAGS.env
-  print('Using env {}...'.format(env_name))
-  goal_coords = fixed_goal_dict.get(env_name, None)[1]
-
-
-  if FLAGS.fixed_goal:
-    print(f"Overriding fixed goal with custom input: {FLAGS.fixed_goal}")
-    try:
-        # Parse string input like "0.1,0.2,0.3"
-        goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
-        print(f"Overriding fixed goal with custom input: {goal_coords}")
-    except Exception as e:
-        raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
-  
-  seed_idx = FLAGS.seed
-  print('Using random seed {}...'.format(seed_idx))
-  params = {
-      'seed': seed_idx,
-      'use_random_actor': True,
-      # entropy_coefficient = None will use adaptive; if setting to a number, note this is log alpha
-      'entropy_coefficient': 0.0,
-      'env_name': env_name,
-      # the number of environment steps
-      'max_number_of_steps': FLAGS.num_steps,
-  }
-  # 2. Select an algorithm. The currently-supported algorithms are:
-  # contrastive_nce, contrastive_cpc, c_learning, nce+c_learning
-  # Many other algorithms can be implemented by passing other parameters
-  # or adding a few lines of code.
-  # By default, do contrastive CPC
-  alg = FLAGS.alg
-  print('Using alg {}...'.format(alg))
-  params['alg_name'] = alg
-  params['fix_goals'] = not FLAGS.sample_goals
-  params['hidden_layer_sizes'] = tuple(FLAGS.hidden_layer_sizes)
-  params['goal_neg_actor_steps'] = FLAGS.goal_neg_actor_steps
-  params['use_residual_mlp'] = FLAGS.use_residual_mlp
-  params['goal_pos_actor_steps'] = FLAGS.goal_pos_actor_steps
-  add_uid = FLAGS.add_uid
-  params['softmax_repr'] = FLAGS.softmax_repr
-  params['cold_q_init'] = FLAGS.cold_q_init
-  params['perturbed_negatives_num'] = FLAGS.perturbed_negatives_num
-  params['perturbed_negatives_goal_num'] = FLAGS.perturbed_negatives_goal_num
-  params['cold_q_scale'] = FLAGS.cold_q_scale
-  if FLAGS.sample_goals:
-    params['fixed_goal'] = None
-  else:
-    params['fixed_goal'] = tuple(goal_coords.astype(float))
-    print('Using fixed goal: {}...'.format(params['fixed_goal']))
-  params['add_uid'] = add_uid
-  params['Q_max'] = FLAGS.Q_max
-  params['init_weight'] = FLAGS.init_weight
-  print('Adding uid: {}...'.format(params['add_uid']))
-
-  params['goal_pos_frac'] = FLAGS.goal_pos_frac  # whether to use naive sampling for the goal
-  
-  params['log_dir'] = FLAGS.log_dir_path
-  params['time_delta_minutes'] = FLAGS.time_delta_minutes
-  params['weight_reset_interval'] = FLAGS.weight_reset_interval
-  params['backward_loss'] = FLAGS.backward_loss
-  params['repr_norm'] = FLAGS.repr_norm
-  if FLAGS.region_bounds is None:
-    params['region_bounds'] = None
-  else:
-    try:
-        lower_str, upper_str = FLAGS.region_bounds.split(':')
-        lower = jnp.array(list(map(float, lower_str.split(','))),
-                          dtype=jnp.float32)
-        upper = jnp.array(list(map(float, upper_str.split(','))),
-                          dtype=jnp.float32)
-        params['region_bounds'] = (lower.tolist(), upper.tolist())
-    except Exception as e:
-        raise ValueError(
-            f"Bad --region_bounds '{FLAGS.region_bounds}'. "
-            "Use 'x_lo,y_lo:x_hi,y_hi' with no spaces."
-        ) from e
-  params['stop_grad_fixed'] = FLAGS.stop_grad_fixed
-  params['negative_goal_repr'] = FLAGS.negative_goal_repr
-  # ---- sanity-check ----------------------------------------------------
-  if params.get('region_bounds') is None:
-      print("[mask] region_bounds = None  → masking DISABLED")
-  else:
-      lo, hi = params['region_bounds']
-      print(f"[mask] region_bounds:"
-            f"  lower = {lo}   upper = {hi}   "
-            f"stop_grad_fixed = {params['stop_grad_fixed']}")
-# stop-grad flag
-  
-  if alg == 'contrastive_cpc':
-    params['use_cpc'] = True
-  elif alg == 'c_learning':
-    params['use_td'] = True
-    params['twin_q'] = True
-  elif alg == 'nce+c_learning':
-    params['use_td'] = True
-    params['twin_q'] = True
-    params['add_mc_to_td'] = True
-  else:
-    raise NotImplementedError('Unknown method: %s' % alg)
+    # 1. Select an environment.
+    # Supported environments:
+    #   Metaworld: sawyer_{bin,box,peg}
+    #   2D nav: point_{Spiral11x11}
+    env_name = FLAGS.env
+    print('Using env {}...'.format(env_name))
+    goal_coords = fixed_goal_dict.get(env_name, None)[1]
 
 
-  
-  # === NEW BLOCK: persist the run configuration =============
-  run_dir = pathlib.Path(params['log_dir']) / f"{params['alg_name']}_{params['env_name']}_{params['seed']}"
+    if FLAGS.fixed_goal:
+        print(f"Overriding fixed goal with custom input: {FLAGS.fixed_goal}")
+        try:
+            # Parse string input like "0.1,0.2,0.3"
+            goal_coords = np.array([float(x) for x in FLAGS.fixed_goal.split(',')])
+            print(f"Overriding fixed goal with custom input: {goal_coords}")
+        except Exception as e:
+            raise ValueError(f"Invalid format for --fixed_goal: {FLAGS.fixed_goal}") from e
 
-  # If you add a UID elsewhere, replicate it here:
-  if params.get('add_uid'):               # True/False in FLAGS
-      run_dir = run_dir.with_name(run_dir.name + f"_{uuid.uuid4().hex[:6]}")
+    seed_idx = FLAGS.seed
+    print('Using random seed {}...'.format(seed_idx))
+    params = {
+        'seed': seed_idx,
+        'use_random_actor': True,
+        # entropy_coefficient = None will use adaptive; if setting to a number, note this is log alpha
+        'entropy_coefficient': 0.0,
+        'env_name': env_name,
+        # the number of environment steps
+        'max_number_of_steps': FLAGS.num_steps,
+    }
+    # 2. Select an algorithm. The currently-supported algorithms are:
+    # contrastive_nce, contrastive_cpc, c_learning, nce+c_learning
+    # Many other algorithms can be implemented by passing other parameters
+    # or adding a few lines of code.
+    # By default, do contrastive CPC
+    alg = FLAGS.alg
+    print('Using alg {}...'.format(alg))
+    params['alg_name'] = alg
+    params['fix_goals'] = not FLAGS.sample_goals
+    params['hidden_layer_sizes'] = tuple(FLAGS.hidden_layer_sizes)
+    params['goal_neg_actor_steps'] = FLAGS.goal_neg_actor_steps
+    params['use_residual_mlp'] = FLAGS.use_residual_mlp
+    params['goal_pos_actor_steps'] = FLAGS.goal_pos_actor_steps
+    add_uid = FLAGS.add_uid
+    params['softmax_repr'] = FLAGS.softmax_repr
+    params['cold_q_init'] = FLAGS.cold_q_init
+    params['perturbed_negatives_num'] = FLAGS.perturbed_negatives_num
+    params['perturbed_negatives_goal_num'] = FLAGS.perturbed_negatives_goal_num
+    params['cold_q_scale'] = FLAGS.cold_q_scale
+    if FLAGS.sample_goals:
+        params['fixed_goal'] = None
+    else:
+        params['fixed_goal'] = tuple(goal_coords.astype(float))
+        print('Using fixed goal: {}...'.format(params['fixed_goal']))
+    params['add_uid'] = add_uid
+    params['Q_max'] = FLAGS.Q_max
+    params['init_weight'] = FLAGS.init_weight
+    print('Adding uid: {}...'.format(params['add_uid']))
 
-  run_dir.mkdir(parents=True, exist_ok=True)
+    params['goal_pos_frac'] = FLAGS.goal_pos_frac  # whether to use naive sampling for the goal
 
-  # --------------------------------------------------------------
-  # Persist the configuration *inside* that run folder.
-  config_file = run_dir / 'config.json'
-  with config_file.open('w') as f:
-      json.dump(params, f, indent=2, sort_keys=True)
+    params['log_dir'] = FLAGS.log_dir_path
+    params['time_delta_minutes'] = FLAGS.time_delta_minutes
+    params['weight_reset_interval'] = FLAGS.weight_reset_interval
+    params['backward_loss'] = FLAGS.backward_loss
+    params['repr_norm'] = FLAGS.repr_norm
 
-  print(f"Saved run config to {config_file}")
+    if FLAGS.region_bounds is None:
+        params['region_bounds'] = None
+    else:
+        try:
+            lower_str, upper_str = FLAGS.region_bounds.split(':')
+            lower = jnp.array(list(map(float, lower_str.split(','))),
+                              dtype=jnp.float32)
+            upper = jnp.array(list(map(float, upper_str.split(','))),
+                              dtype=jnp.float32)
+            params['region_bounds'] = (lower.tolist(), upper.tolist())
+        except Exception as e:
+            raise ValueError(
+                f"Bad --region_bounds '{FLAGS.region_bounds}'. "
+                "Use 'x_lo,y_lo:x_hi,y_hi' with no spaces."
+            ) from e
+    params['stop_grad_fixed'] = FLAGS.stop_grad_fixed
+    params['negative_goal_repr'] = FLAGS.negative_goal_repr
+    
+    # Add the absorbing version
+    params['use_absorbing_failure'] = FLAGS.use_absorbing_failure
+    
+    # ---- sanity-check ----------------------------------------------------
+    if params.get('region_bounds') is None:
+        print("[mask] region_bounds = None  → masking DISABLED")
+    else:
+        lo, hi = params['region_bounds']
+        print(f"[mask] region_bounds:"
+              f"  lower = {lo}   upper = {hi}   "
+              f"stop_grad_fixed = {params['stop_grad_fixed']}")
+    # stop-grad flag
+
+    if alg == 'contrastive_cpc':
+        params['use_cpc'] = True
+    elif alg == 'c_learning':
+        params['use_td'] = True
+        params['twin_q'] = True
+    elif alg == 'nce+c_learning':
+        params['use_td'] = True
+        params['twin_q'] = True
+        params['add_mc_to_td'] = True
+    else:
+        raise NotImplementedError('Unknown method: %s' % alg)
+
+
+    # === NEW BLOCK: persist the run configuration =============
+    run_dir = pathlib.Path(params['log_dir']) / f"{params['alg_name']}_{params['env_name']}_{params['seed']}"
+
+    # If you add a UID elsewhere, replicate it here:
+    if params.get('add_uid'):               # True/False in FLAGS
+        run_dir = run_dir.with_name(run_dir.name + f"_{uuid.uuid4().hex[:6]}")
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # --------------------------------------------------------------
+    # Persist the configuration *inside* that run folder.
+    config_file = run_dir / 'config.json'
+    with config_file.open('w') as f:
+        json.dump(params, f, indent=2, sort_keys=True)
+
+    print(f"Saved run config to {config_file}")
     # ==========================================================
 
 
 
-  program = get_program(params)
-  # Set terminal='tmux' if you want different components in different windows.
-  
-  print(params)
-  
-  lp.launch(program, terminal='current_terminal')
+    program = get_program(params)
+    # Set terminal='tmux' if you want different components in different windows.
+
+    print(params)
+
+    lp.launch(program, terminal='current_terminal')
 
 if __name__ == '__main__':
-  app.run(main)
+    app.run(main)

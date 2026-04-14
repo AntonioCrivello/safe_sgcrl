@@ -105,14 +105,20 @@ def resize_walls(walls, factor):
 class PointEnv(gym.Env):
   """Abstract class for 2D navigation environments."""
 
-  def __init__(self,
-               walls = None, resize_factor = 1, fixed_start_end = None):
+  def __init__(
+    self,
+    walls = None, 
+    resize_factor = 1, 
+    region_bounds = None,
+    fixed_start_end = None
+    ):
     """Initialize the point environment.
 
     Args:
       walls: (str or array) binary, H x W array indicating locations of walls.
         Can also be the name of one of the maps defined above.
       resize_factor: (int) Scale the map by this factor.
+      region_bounds: absorbing region bounds
     """
     if resize_factor > 1:
       self._walls = resize_walls(WALLS[walls], resize_factor)
@@ -132,13 +138,26 @@ class PointEnv(gym.Env):
         high=np.array([height, width, height, width]),
         dtype=np.float32)
     self._timestep = 0
+    
+    # Initialize values for absorbing region
+    self.region_bounds = region_bounds
+    self._is_absorbed = False
+
     if '11x11' in walls:
       self._max_episode_steps = 100
     else:
       self._max_episode_steps = 50
     self.reset()
 
+  def _in_absorbing_region(self):
+    if self.region_bounds is None:
+      return False
+    lower, upper = self.region_bounds
+    return np.all(self.state >= lower) and np.all(self.state <= upper)
+
   def _sample_empty_state(self):
+    #TODO 
+    # Future should check that initial state is not already in absorbing state
     candidate_states = np.where(self._walls == 0)
     num_candidate_states = len(candidate_states[0])
     state_index = np.random.choice(num_candidate_states)
@@ -154,6 +173,8 @@ class PointEnv(gym.Env):
 
   def reset(self, random = True):
     self._timestep = 0
+    # Initialize to not in absorbing state
+    self._is_absorbed = False
     
     if self._fixed_start_end is not None:
         # fix the starting and ending position of the agent
@@ -188,6 +209,9 @@ class PointEnv(gym.Env):
     return (self._walls[i, j] == 1)
 
   def step(self, action):
+    if self._is_absorbed:
+      return self._get_obs(), 0.0, False, {'absorbed': True}
+    
     action = action.copy()
     if not self.action_space.contains(action):
       print('WARNING: clipping invalid action:', action)
@@ -204,14 +228,20 @@ class PointEnv(gym.Env):
         new_state[axis] += dt * action[axis]
         if not self._is_blocked(new_state):
           self.state = new_state
+    if self._in_absorbing_region():
+      self._is_absorbed = True
 
     done = False
     obs = self._get_obs()
-    dist = np.linalg.norm(self.goal - self.state)
     self._last_end_pos = self.state
     self._timestep += 1
-    rew = float(dist < 1.0)
-    return obs, rew, done, {}
+    
+    if self._is_absorbed:
+      rew = 0.0
+    else:
+      dist = np.linalg.norm(self.goal - self.state)
+      rew = float(dist < 1.0)
+    return obs, rew, done, {'absorbed': self._is_absorbed}
 
   @property
   def walls(self):

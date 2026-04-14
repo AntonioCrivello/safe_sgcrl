@@ -105,6 +105,7 @@ class ContrastiveConfig:
   stop_grad_fixed: Optional[bool] = True                     # freeze grads on fixed goal
 
   region_bounds: Tuple[jnp.ndarray, jnp.ndarray] = None
+  using_absorbing_failure: bool = False       # Whether or not environment allows for absorbing state
   ## Example usage:
   ## low x y
   ## high x y

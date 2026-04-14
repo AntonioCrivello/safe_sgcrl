@@ -291,8 +291,15 @@ class ObservationFilterWrapper(base.EnvironmentWrapper):
     return self._observation_spec
 
 
-def make_environment(env_name, start_index, end_index,
-                     seed, fixed_start_end = None, extra_dim = 8):
+def make_environment(
+    env_name, 
+    start_index, 
+    end_index,
+    seed, 
+    fixed_start_end = None, 
+    region_bounds = None,
+    extra_dim = 8
+):
   """Creates the environment.
 
   Args:
@@ -307,7 +314,7 @@ def make_environment(env_name, start_index, end_index,
       the start_index/end_index is applied.
   """
   np.random.seed(seed)
-  gym_env, obs_dim, max_episode_steps = env_utils.load(env_name, fixed_start_end, extra_dim)
+  gym_env, obs_dim, max_episode_steps = env_utils.load(env_name, fixed_start_end, extra_dim, region_bounds)
   goal_indices = obs_dim + obs_to_goal_1d(np.arange(obs_dim), start_index,
                                           end_index)
   indices = np.concatenate([

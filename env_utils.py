@@ -33,7 +33,7 @@ def euler2quat(euler):
   return quat
 
 
-def load(env_name, fixed_start_end=None, extra_dim=8):
+def load(env_name, fixed_start_end=None, extra_dim=8, region_bounds=None):
   """Loads the train and eval environments, as well as the obs_dim."""
   # pylint: disable=invalid-name
   kwargs = {}
@@ -53,6 +53,7 @@ def load(env_name, fixed_start_end=None, extra_dim=8):
     CLASS = point_env.PointEnv
     kwargs['walls'] = env_name.split('_')[-1]
     kwargs['fixed_start_end'] = fixed_start_end
+    kwargs['region_bounds'] = region_bounds
     if '11x11' in env_name:
       max_episode_steps = 100
     else:
